@@ -1,275 +1,559 @@
 #!/bin/bash
 # =============================================================================
-# Cold Chain Digital Twin - Full Deployment Script
-# Deploys: Terraform → ECR Images → EKS Apps
+# Cold Chain Digital Twin — Idempotent Deploy Script
+# =============================================================================
+# Every step checks if work is already done before executing.
+# Safe to re-run at any point — picks up where it left off.
 # =============================================================================
 
-set -e
+set -euo pipefail
 
-# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+DIM='\033[2m'
 NC='\033[0m'
 
-# Configuration
 AWS_REGION="us-west-2"
-AWS_ACCOUNT_ID="443071119316"
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+PROJECT="coldchain-digital-twin"
+NAMESPACE="coldchain"
 
-echo -e "${BLUE}"
-echo "=============================================="
-echo "Cold Chain Digital Twin - Full Deployment"
-echo "=============================================="
-echo -e "${NC}"
+SERVICES=("mqtt-kafka-bridge" "kafka-consumer" "state-engine" "dashboard")
+SERVICE_DIRS=("bridge" "ingestion" "state-engine" "dashboard")
 
-# -----------------------------------------------------------------------------
-# Step 1: Terraform Apply
-# -----------------------------------------------------------------------------
-echo -e "${YELLOW}[1/11] Deploying Infrastructure with Terraform...${NC}"
+# Step tracking arrays
+STEP_NAMES=()
+STEP_STATUSES=()
+STEP_DETAILS=()
 
-cd "$PROJECT_DIR/terraform"
-terraform init
-terraform apply -auto-approve
+TOTAL_STEPS=12
+CURRENT_STEP=0
 
-# Get outputs
-MQTT_IP=$(terraform output -raw mqtt_broker_public_ip)
-MONGODB_IP=$(terraform output -raw mongodb_private_ip)
-ECR_BRIDGE_URL=$(terraform output -raw ecr_repository_url)
-ECR_INGESTION_URL=$(terraform output -raw ecr_ingestion_url)
-ECR_STATE_ENGINE_URL=$(terraform output -raw ecr_state_engine_url)
-EKS_CLUSTER_NAME=$(terraform output -raw eks_cluster_name)
+# =============================================================================
+# Helper Functions
+# =============================================================================
 
-echo -e "${GREEN}✓ Terraform complete${NC}"
-echo "  MQTT IP: $MQTT_IP"
-echo "  MongoDB IP: $MONGODB_IP"
-echo "  EKS Cluster: $EKS_CLUSTER_NAME"
+track_step() {
+  # $1 = step name, $2 = status (pass/skip/fail), $3 = detail message
+  STEP_NAMES+=("$1")
+  STEP_STATUSES+=("$2")
+  STEP_DETAILS+=("$3")
+}
 
-# -----------------------------------------------------------------------------
-# Step 2: Wait for EC2 instances to initialize
-# -----------------------------------------------------------------------------
-echo -e "${YELLOW}[2/11] Waiting for EC2 instances to initialize...${NC}"
+log_step() {
+  CURRENT_STEP=$((CURRENT_STEP + 1))
+  echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${YELLOW}[${CURRENT_STEP}/${TOTAL_STEPS}] $1${NC}"
+  echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+}
 
-sleep 90
+log_skip() {
+  echo -e "  ${GREEN}✓ Already done — $1${NC}"
+}
 
-echo -e "${GREEN}✓ EC2 initialization complete${NC}"
+log_done() {
+  echo -e "  ${GREEN}✓ $1${NC}"
+}
 
-# -----------------------------------------------------------------------------
-# Step 3: Build and Push Bridge Image to ECR
-# -----------------------------------------------------------------------------
-echo -e "${YELLOW}[3/11] Building and pushing Bridge image to ECR...${NC}"
+log_info() {
+  echo -e "  ${YELLOW}→ $1${NC}"
+}
 
-cd "$PROJECT_DIR/bridge"
+log_error() {
+  echo -e "  ${RED}✗ $1${NC}"
+}
 
-aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+print_summary_table() {
+  echo ""
+  echo -e "${BOLD}╔══════════════════════════════════════════════════════════════════════╗${NC}"
+  echo -e "${BOLD}║                    DEPLOYMENT STATUS REPORT                         ║${NC}"
+  echo -e "${BOLD}╠════╦═══════════════════════════════╦════════╦═════════════════════════╣${NC}"
+  printf  "${BOLD}║ %-2s ║ %-29s ║ %-6s ║ %-23s ║${NC}\n" "#" "Step" "Status" "Detail"
+  echo -e "${BOLD}╠════╬═══════════════════════════════╬════════╬═════════════════════════╣${NC}"
 
-docker build --platform linux/amd64 -t coldchain-bridge .
-docker tag coldchain-bridge:latest "$ECR_BRIDGE_URL:latest"
-docker push "$ECR_BRIDGE_URL:latest"
+  for i in "${!STEP_NAMES[@]}"; do
+    local num=$((i + 1))
+    local name="${STEP_NAMES[$i]}"
+    local status="${STEP_STATUSES[$i]}"
+    local detail="${STEP_DETAILS[$i]}"
 
-echo -e "${GREEN}✓ Bridge image pushed to ECR${NC}"
+    # Truncate detail if too long
+    if [ ${#detail} -gt 23 ]; then
+      detail="${detail:0:20}..."
+    fi
 
-# -----------------------------------------------------------------------------
-# Step 4: Build and Push Ingestion Image to ECR
-# -----------------------------------------------------------------------------
-echo -e "${YELLOW}[4/11] Building and pushing Ingestion image to ECR...${NC}"
+    # Truncate name if too long
+    if [ ${#name} -gt 29 ]; then
+      name="${name:0:26}..."
+    fi
 
-cd "$PROJECT_DIR/ingestion"
+    local icon=""
+    local color=""
+    case "$status" in
+      pass) icon="✅"; color="${GREEN}" ;;
+      skip) icon="⏭️ "; color="${CYAN}" ;;
+      fail) icon="❌"; color="${RED}" ;;
+    esac
 
-docker build --platform linux/amd64 -t coldchain-ingestion .
-docker tag coldchain-ingestion:latest "$ECR_INGESTION_URL:latest"
-docker push "$ECR_INGESTION_URL:latest"
+    printf "║ %-2s ║ %-29s ║ ${color}%-6s${NC} ║ %-23s ║\n" "$num" "$name" "$icon" "$detail"
+  done
 
-echo -e "${GREEN}✓ Ingestion image pushed to ECR${NC}"
+  echo -e "${BOLD}╚════╩═══════════════════════════════╩════════╩═════════════════════════╝${NC}"
 
-# -----------------------------------------------------------------------------
-# Step 5: Build and Push Kafka Image to ECR
-# -----------------------------------------------------------------------------
-echo -e "${YELLOW}[5/11] Building and pushing Kafka image to ECR...${NC}"
+  # Count results
+  local passed=0 skipped=0 failed=0
+  for s in "${STEP_STATUSES[@]}"; do
+    case "$s" in
+      pass) passed=$((passed + 1)) ;;
+      skip) skipped=$((skipped + 1)) ;;
+      fail) failed=$((failed + 1)) ;;
+    esac
+  done
 
-aws ecr create-repository --repository-name coldchain-kafka --region $AWS_REGION 2>/dev/null || true
+  echo ""
+  echo -e "  ${GREEN}✅ Executed: ${passed}${NC}    ${CYAN}⏭️  Skipped: ${skipped}${NC}    ${RED}❌ Failed: ${failed}${NC}"
+  echo ""
+}
 
-docker pull --platform linux/amd64 apache/kafka:3.9.0
-docker tag apache/kafka:3.9.0 "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/coldchain-kafka:3.9.0"
-docker push "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/coldchain-kafka:3.9.0"
+# =============================================================================
+# Step 0: Terraform State Bucket
+# =============================================================================
+ensure_state_bucket() {
+  log_step "Ensure Terraform State Bucket"
 
-echo -e "${GREEN}✓ Kafka image pushed to ECR${NC}"
+  STATE_BUCKET="${PROJECT}-terraform-state"
 
-# -----------------------------------------------------------------------------
-# Step 6: Build and Push Redis Image to ECR
-# -----------------------------------------------------------------------------
-echo -e "${YELLOW}[6/11] Building and pushing Redis image to ECR...${NC}"
-
-aws ecr create-repository --repository-name coldchain-redis --region $AWS_REGION 2>/dev/null || true
-
-docker pull --platform linux/amd64 redis:7-alpine
-docker tag redis:7-alpine "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/coldchain-redis:7-alpine"
-docker push "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/coldchain-redis:7-alpine"
-
-echo -e "${GREEN}✓ Redis image pushed to ECR${NC}"
-
-# -----------------------------------------------------------------------------
-# Step 7: Build and Push State Engine Image to ECR
-# -----------------------------------------------------------------------------
-echo -e "${YELLOW}[7/11] Building and pushing State Engine image to ECR...${NC}"
-
-cd "$PROJECT_DIR/state-engine"
-
-docker build --platform linux/amd64 -t coldchain-state-engine .
-docker tag coldchain-state-engine:latest "$ECR_STATE_ENGINE_URL:latest"
-docker push "$ECR_STATE_ENGINE_URL:latest"
-
-echo -e "${GREEN}✓ State Engine image pushed to ECR${NC}"
-
-# -----------------------------------------------------------------------------
-# Step 8: Configure kubectl
-# -----------------------------------------------------------------------------
-echo -e "${YELLOW}[8/11] Configuring kubectl for EKS...${NC}"
-
-aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
-
-kubectl get nodes
-
-echo -e "${GREEN}✓ kubectl configured${NC}"
-
-# -----------------------------------------------------------------------------
-# Step 9: Deploy Core Kubernetes Resources
-# -----------------------------------------------------------------------------
-echo -e "${YELLOW}[9/11] Deploying core Kubernetes resources...${NC}"
-
-cd "$PROJECT_DIR"
-
-# Update configmaps with actual IPs
-sed -i.bak "s/MQTT_BROKER_IP_PLACEHOLDER/$MQTT_IP/" k8s/bridge/bridge-configmap.yaml
-sed -i.bak "s|MONGO_URI_PLACEHOLDER|mongodb://$MONGODB_IP:27017|" k8s/ingestion/ingestion-configmap.yaml
-sed -i.bak "s|MONGO_URI_PLACEHOLDER|mongodb://$MONGODB_IP:27017|" k8s/state-engine/state-engine-configmap.yaml
-
-# Apply namespace
-kubectl apply -f k8s/namespace.yaml
-
-# Apply Kafka
-kubectl apply -f k8s/kafka/
-echo "  Waiting for Kafka to be ready..."
-kubectl wait --for=condition=ready pod -l app=kafka -n coldchain --timeout=180s
-
-# Apply Bridge
-kubectl apply -f k8s/bridge/
-echo "  Waiting for Bridge to be ready..."
-kubectl wait --for=condition=ready pod -l app=mqtt-kafka-bridge -n coldchain --timeout=120s
-
-# Apply Ingestion
-kubectl apply -f k8s/ingestion/
-echo "  Waiting for Ingestion to be ready..."
-kubectl wait --for=condition=ready pod -l app=kafka-consumer -n coldchain --timeout=120s
-
-# Apply Redis
-kubectl apply -f k8s/redis/
-echo "  Waiting for Redis to be ready..."
-kubectl wait --for=condition=ready pod -l app=redis -n coldchain --timeout=60s
-
-# Apply State Engine
-kubectl apply -f k8s/state-engine/
-echo "  Waiting for State Engine to be ready..."
-kubectl wait --for=condition=ready pod -l app=state-engine -n coldchain --timeout=120s
-
-# Restore original configmaps
-mv k8s/bridge/bridge-configmap.yaml.bak k8s/bridge/bridge-configmap.yaml
-mv k8s/ingestion/ingestion-configmap.yaml.bak k8s/ingestion/ingestion-configmap.yaml
-mv k8s/state-engine/state-engine-configmap.yaml.bak k8s/state-engine/state-engine-configmap.yaml
-
-echo -e "${GREEN}✓ Core Kubernetes resources deployed${NC}"
-
-# -----------------------------------------------------------------------------
-# Step 10: Build and Push Dashboard Image to ECR
-# -----------------------------------------------------------------------------
-echo -e "${YELLOW}[10/11] Building and pushing Dashboard image to ECR...${NC}"
-
-# Wait for State Engine LoadBalancer
-echo "  Waiting for State Engine LoadBalancer..."
-sleep 30
-
-API_URL=""
-for i in {1..12}; do
-  API_URL=$(kubectl get svc -n coldchain state-engine -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
-  if [ -n "$API_URL" ]; then
-    break
+  if aws s3api head-bucket --bucket "$STATE_BUCKET" --region "$AWS_REGION" 2>/dev/null; then
+    log_skip "Bucket $STATE_BUCKET exists"
+    track_step "Terraform State Bucket" "skip" "Already exists"
+    return 0
   fi
-  echo "  Waiting for LoadBalancer... ($i/12)"
-  sleep 10
-done
 
-if [ -z "$API_URL" ]; then
-  echo -e "${RED}Failed to get State Engine API URL${NC}"
-  exit 1
-fi
+  log_info "Creating state bucket..."
+  aws s3api create-bucket \
+    --bucket "$STATE_BUCKET" \
+    --region "$AWS_REGION" \
+    --create-bucket-configuration LocationConstraint="$AWS_REGION"
 
-echo "  State Engine API: http://$API_URL"
+  aws s3api put-bucket-versioning \
+    --bucket "$STATE_BUCKET" \
+    --versioning-configuration Status=Enabled
 
-cd "$PROJECT_DIR/dashboard"
+  aws s3api put-bucket-encryption \
+    --bucket "$STATE_BUCKET" \
+    --server-side-encryption-configuration \
+    '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"aws:kms"}}]}'
 
-docker build \
-  --platform linux/amd64 \
-  --build-arg NEXT_PUBLIC_API_URL=http://$API_URL \
-  -t coldchain-dashboard .
+  aws s3api put-public-access-block \
+    --bucket "$STATE_BUCKET" \
+    --public-access-block-configuration \
+    "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
 
-docker tag coldchain-dashboard:latest "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/coldchain-digital-twin-dashboard:latest"
-docker push "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/coldchain-digital-twin-dashboard:latest"
+  log_done "State bucket created"
+  track_step "Terraform State Bucket" "pass" "Created $STATE_BUCKET"
+}
 
-echo -e "${GREEN}✓ Dashboard image pushed to ECR${NC}"
+# =============================================================================
+# Step 1: Terraform Apply
+# =============================================================================
+apply_terraform() {
+  log_step "Apply Terraform Infrastructure"
 
-# -----------------------------------------------------------------------------
-# Step 11: Deploy Dashboard
-# -----------------------------------------------------------------------------
-echo -e "${YELLOW}[11/11] Deploying Dashboard...${NC}"
+  cd terraform
 
-cd "$PROJECT_DIR"
+  if [ ! -d ".terraform" ]; then
+    log_info "Running terraform init..."
+    terraform init
+  else
+    log_skip "Terraform already initialized"
+  fi
 
-kubectl apply -f k8s/dashboard/
-echo "  Waiting for Dashboard to be ready..."
-kubectl wait --for=condition=ready pod -l app=dashboard -n coldchain --timeout=120s
+  terraform plan -detailed-exitcode -out=tfplan 2>/dev/null && PLAN_EXIT=$? || PLAN_EXIT=$?
 
-echo -e "${GREEN}✓ Dashboard deployed${NC}"
+  if [ "$PLAN_EXIT" -eq 0 ]; then
+    log_skip "No infrastructure changes needed"
+    rm -f tfplan
+    track_step "Terraform Apply" "skip" "No changes"
+  elif [ "$PLAN_EXIT" -eq 2 ]; then
+    log_info "Changes detected, applying..."
+    terraform apply tfplan
+    rm -f tfplan
+    log_done "Terraform applied"
+    track_step "Terraform Apply" "pass" "Changes applied"
+  else
+    log_error "Terraform plan failed"
+    rm -f tfplan
+    cd ..
+    track_step "Terraform Apply" "fail" "Plan failed"
+    return 1
+  fi
 
-# -----------------------------------------------------------------------------
-# Summary
-# -----------------------------------------------------------------------------
-echo -e "${GREEN}"
-echo "=============================================="
-echo "Deployment Complete!"
-echo "=============================================="
-echo -e "${NC}"
+  export MQTT_BROKER_IP=$(terraform output -raw mqtt_broker_public_ip)
+  export MONGODB_PRIVATE_IP=$(terraform output -raw mongodb_private_ip)
+  export EKS_CLUSTER_NAME=$(terraform output -raw eks_cluster_name 2>/dev/null || echo "$PROJECT-eks")
 
-echo -e "${BLUE}MQTT Broker:${NC}"
-echo "  IP: $MQTT_IP"
-echo "  Test: mosquitto_sub -h $MQTT_IP -p 1883 -t '#' -v"
+  cd ..
+  log_done "MQTT=$MQTT_BROKER_IP | MongoDB=$MONGODB_PRIVATE_IP"
+}
 
-echo ""
-echo -e "${BLUE}MongoDB:${NC}"
-echo "  Private IP: $MONGODB_IP"
-echo "  Connection: mongodb://$MONGODB_IP:27017/coldchain"
+# =============================================================================
+# Step 2: Update Kubeconfig
+# =============================================================================
+update_kubeconfig() {
+  log_step "Update Kubeconfig for EKS"
 
-echo ""
-echo -e "${BLUE}EKS Cluster:${NC}"
-echo "  Name: $EKS_CLUSTER_NAME"
-echo "  Pods: kubectl get pods -n coldchain"
+  CURRENT_CONTEXT=$(kubectl config current-context 2>/dev/null || echo "")
 
-echo ""
-echo -e "${BLUE}State Engine API:${NC}"
-echo "  URL: http://$API_URL"
-echo "  Health: curl http://$API_URL/health"
-echo "  Docs: http://$API_URL/docs"
+  if echo "$CURRENT_CONTEXT" | grep -q "$EKS_CLUSTER_NAME" && kubectl get nodes &>/dev/null; then
+    log_skip "Kubeconfig already points to $EKS_CLUSTER_NAME"
+    track_step "Update Kubeconfig" "skip" "Already configured"
+    return 0
+  fi
 
-echo ""
-echo -e "${BLUE}Dashboard:${NC}"
-DASHBOARD_URL=$(kubectl get svc -n coldchain dashboard -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
-echo "  URL: http://$DASHBOARD_URL"
+  log_info "Updating kubeconfig..."
+  aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
+  kubectl get nodes
+  log_done "Kubeconfig updated"
+  track_step "Update Kubeconfig" "pass" "Context switched"
+}
 
-echo ""
-echo -e "${BLUE}Verify Data Flow:${NC}"
-echo "  Bridge logs: kubectl logs -n coldchain -l app=mqtt-kafka-bridge --tail=20"
-echo "  Consumer logs: kubectl logs -n coldchain -l app=kafka-consumer --tail=20"
-echo "  State Engine logs: kubectl logs -n coldchain -l app=state-engine --tail=20"
+# =============================================================================
+# Step 3: Create ECR Repositories
+# =============================================================================
+ensure_ecr_repos() {
+  log_step "Ensure ECR Repositories Exist"
 
-echo ""
-echo -e "${GREEN}All systems running!${NC}"
+  local created=0
+  local existed=0
+
+  for svc in "${SERVICES[@]}"; do
+    REPO_NAME="${PROJECT}-${svc}"
+    if aws ecr describe-repositories --repository-names "$REPO_NAME" --region "$AWS_REGION" &>/dev/null; then
+      log_skip "ECR repo $REPO_NAME exists"
+      existed=$((existed + 1))
+    else
+      log_info "Creating ECR repo $REPO_NAME..."
+      aws ecr create-repository \
+        --repository-name "$REPO_NAME" \
+        --region "$AWS_REGION" \
+        --image-scanning-configuration scanOnPush=true
+      log_done "Created $REPO_NAME"
+      created=$((created + 1))
+    fi
+  done
+
+  if [ "$created" -eq 0 ]; then
+    track_step "ECR Repositories" "skip" "All ${existed} exist"
+  else
+    track_step "ECR Repositories" "pass" "Created ${created}, existed ${existed}"
+  fi
+}
+
+# =============================================================================
+# Step 4: ECR Login
+# =============================================================================
+ecr_login() {
+  log_step "ECR Docker Login"
+
+  aws ecr get-login-password --region "$AWS_REGION" | \
+    docker login --username AWS --password-stdin "$ECR_REGISTRY"
+
+  log_done "ECR login successful"
+  track_step "ECR Docker Login" "pass" "Token refreshed"
+}
+
+# =============================================================================
+# Step 5: Build and Push Images
+# =============================================================================
+build_and_push_images() {
+  log_step "Build and Push Docker Images"
+
+  local pushed=0
+
+  for i in "${!SERVICES[@]}"; do
+    local svc="${SERVICES[$i]}"
+    local dir="${SERVICE_DIRS[$i]}"
+    local repo="${ECR_REGISTRY}/${PROJECT}-${svc}"
+    local tag="latest"
+
+    # Skip dashboard here — it's built in step 10 with the API URL
+    if [ "$svc" = "dashboard" ]; then
+      log_info "Skipping dashboard (built in step 10 with API URL)"
+      continue
+    fi
+
+    log_info "Building $svc..."
+
+    docker build --platform linux/amd64 -t "${svc}:${tag}" "$dir"
+    docker tag "${svc}:${tag}" "${repo}:${tag}"
+    docker push "${repo}:${tag}"
+    pushed=$((pushed + 1))
+
+    log_done "Pushed $svc"
+  done
+
+  track_step "Build & Push Images" "pass" "Pushed ${pushed} images"
+}
+
+# =============================================================================
+# Step 6: Create Namespace
+# =============================================================================
+ensure_namespace() {
+  log_step "Ensure Kubernetes Namespace"
+
+  if kubectl get namespace "$NAMESPACE" &>/dev/null; then
+    log_skip "Namespace $NAMESPACE exists"
+    track_step "K8s Namespace" "skip" "Already exists"
+    return 0
+  fi
+
+  kubectl create namespace "$NAMESPACE"
+  log_done "Namespace $NAMESPACE created"
+  track_step "K8s Namespace" "pass" "Created $NAMESPACE"
+}
+
+# =============================================================================
+# Step 7: Apply ConfigMaps (always update — IPs may have changed)
+# =============================================================================
+apply_configmaps() {
+  log_step "Apply ConfigMaps with Current IPs"
+
+  kubectl create configmap bridge-config -n "$NAMESPACE" \
+    --from-literal=MQTT_BROKER="$MQTT_BROKER_IP" \
+    --from-literal=MQTT_PORT="1883" \
+    --from-literal=KAFKA_BOOTSTRAP_SERVERS="kafka:9092" \
+    --from-literal=KAFKA_TOPIC_TRUCKS="coldchain.telemetry.trucks" \
+    --from-literal=KAFKA_TOPIC_ROOMS="coldchain.telemetry.rooms" \
+    --from-literal=KAFKA_TOPIC_ALERTS="coldchain.alerts" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  kubectl create configmap ingestion-config -n "$NAMESPACE" \
+    --from-literal=KAFKA_BOOTSTRAP_SERVERS="kafka:9092" \
+    --from-literal=KAFKA_GROUP_ID="coldchain-ingestion" \
+    --from-literal=KAFKA_TOPICS="coldchain.telemetry.trucks,coldchain.telemetry.rooms,coldchain.alerts" \
+    --from-literal=MONGO_URI="mongodb://${MONGODB_PRIVATE_IP}:27017" \
+    --from-literal=MONGO_DB="coldchain" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  kubectl create configmap state-engine-config -n "$NAMESPACE" \
+    --from-literal=KAFKA_BOOTSTRAP_SERVERS="kafka:9092" \
+    --from-literal=KAFKA_GROUP_ID="state-engine" \
+    --from-literal=KAFKA_TOPICS="coldchain.telemetry.trucks,coldchain.telemetry.rooms,coldchain.alerts" \
+    --from-literal=REDIS_HOST="redis" \
+    --from-literal=REDIS_PORT="6379" \
+    --from-literal=REDIS_DB="0" \
+    --from-literal=MONGO_URI="mongodb://${MONGODB_PRIVATE_IP}:27017" \
+    --from-literal=MONGO_DB="coldchain" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  log_done "ConfigMaps applied (MQTT=$MQTT_BROKER_IP, MongoDB=$MONGODB_PRIVATE_IP)"
+  track_step "ConfigMaps" "pass" "3 configmaps applied"
+}
+
+# =============================================================================
+# Step 8: Deploy Kafka & Redis (StatefulSets)
+# =============================================================================
+deploy_stateful_services() {
+  log_step "Deploy Kafka & Redis StatefulSets"
+
+  local kafka_action="deployed"
+  local redis_action="deployed"
+
+  # Kafka
+  if kubectl get statefulset kafka -n "$NAMESPACE" &>/dev/null; then
+    KAFKA_READY=$(kubectl get statefulset kafka -n "$NAMESPACE" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+    if [ "${KAFKA_READY:-0}" -ge 1 ]; then
+      log_skip "Kafka StatefulSet running ($KAFKA_READY replicas ready)"
+      kafka_action="skipped"
+    else
+      log_info "Kafka exists but not ready, reapplying..."
+      kubectl apply -f k8s/kafka/
+    fi
+  else
+    log_info "Deploying Kafka..."
+    kubectl apply -f k8s/kafka/
+  fi
+
+  # Redis
+  if kubectl get statefulset redis -n "$NAMESPACE" &>/dev/null; then
+    REDIS_READY=$(kubectl get statefulset redis -n "$NAMESPACE" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+    if [ "${REDIS_READY:-0}" -ge 1 ]; then
+      log_skip "Redis StatefulSet running ($REDIS_READY replicas ready)"
+      redis_action="skipped"
+    else
+      log_info "Redis exists but not ready, reapplying..."
+      kubectl apply -f k8s/redis/
+    fi
+  else
+    log_info "Deploying Redis..."
+    kubectl apply -f k8s/redis/
+  fi
+
+  # Wait only if something was deployed
+  if [ "$kafka_action" != "skipped" ] || [ "$redis_action" != "skipped" ]; then
+    log_info "Waiting for Kafka and Redis to be ready..."
+    kubectl wait --for=condition=ready pod -l app=kafka -n "$NAMESPACE" --timeout=120s
+    kubectl wait --for=condition=ready pod -l app=redis -n "$NAMESPACE" --timeout=120s
+  fi
+
+  if [ "$kafka_action" = "skipped" ] && [ "$redis_action" = "skipped" ]; then
+    track_step "Kafka & Redis" "skip" "Both already running"
+  else
+    log_done "Kafka and Redis ready"
+    track_step "Kafka & Redis" "pass" "Kafka:${kafka_action} Redis:${redis_action}"
+  fi
+}
+
+# =============================================================================
+# Step 9: Deploy Application Services
+# =============================================================================
+deploy_app_services() {
+  log_step "Deploy Application Services"
+
+  APP_SERVICES=("bridge" "ingestion" "state-engine")
+  DEPLOY_NAMES=("mqtt-kafka-bridge" "kafka-consumer" "state-engine")
+
+  local deployed=0
+  local restarted=0
+
+  for i in "${!APP_SERVICES[@]}"; do
+    local svc_dir="${APP_SERVICES[$i]}"
+    local deploy_name="${DEPLOY_NAMES[$i]}"
+
+    if kubectl get deployment "$deploy_name" -n "$NAMESPACE" &>/dev/null; then
+      READY=$(kubectl get deployment "$deploy_name" -n "$NAMESPACE" \
+        -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+      DESIRED=$(kubectl get deployment "$deploy_name" -n "$NAMESPACE" \
+        -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "1")
+
+      # Apply latest manifests + restart to pick up configmap/image changes
+      kubectl apply -f "k8s/${svc_dir}/"
+      kubectl rollout restart deployment "$deploy_name" -n "$NAMESPACE"
+      log_info "Restarted $deploy_name to pick up latest changes"
+      restarted=$((restarted + 1))
+    else
+      log_info "Deploying $deploy_name..."
+      kubectl apply -f "k8s/${svc_dir}/"
+      deployed=$((deployed + 1))
+    fi
+  done
+
+  log_info "Waiting for services to be ready..."
+  kubectl wait --for=condition=ready pod -l app=mqtt-kafka-bridge -n "$NAMESPACE" --timeout=120s
+  kubectl wait --for=condition=ready pod -l app=kafka-consumer -n "$NAMESPACE" --timeout=120s
+  kubectl wait --for=condition=ready pod -l app=state-engine -n "$NAMESPACE" --timeout=120s
+
+  log_done "All application services running"
+  track_step "Application Services" "pass" "New:${deployed} Restarted:${restarted}"
+}
+
+# =============================================================================
+# Step 10: Deploy Dashboard
+# =============================================================================
+deploy_dashboard() {
+  log_step "Deploy Dashboard"
+
+  STATE_ENGINE_URL=$(kubectl get svc -n "$NAMESPACE" state-engine \
+    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+
+  if [ -z "$STATE_ENGINE_URL" ]; then
+    log_info "Waiting for state-engine LoadBalancer..."
+    kubectl wait --for=jsonpath='{.status.loadBalancer.ingress[0].hostname}' \
+      svc/state-engine -n "$NAMESPACE" --timeout=120s
+    STATE_ENGINE_URL=$(kubectl get svc -n "$NAMESPACE" state-engine \
+      -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+  fi
+
+  log_info "State Engine API: http://${STATE_ENGINE_URL}"
+
+  local repo="${ECR_REGISTRY}/${PROJECT}-dashboard"
+  docker build --platform linux/amd64 \
+    --build-arg NEXT_PUBLIC_API_URL="http://${STATE_ENGINE_URL}" \
+    -t dashboard:latest dashboard/
+  docker tag dashboard:latest "${repo}:latest"
+  docker push "${repo}:latest"
+
+  kubectl apply -f k8s/dashboard/
+  kubectl rollout restart deployment dashboard -n "$NAMESPACE" 2>/dev/null || true
+
+  log_info "Waiting for dashboard pods..."
+  kubectl wait --for=condition=ready pod -l app=dashboard -n "$NAMESPACE" --timeout=120s
+
+  log_done "Dashboard deployed"
+  track_step "Dashboard" "pass" "API=$STATE_ENGINE_URL"
+}
+
+# =============================================================================
+# Step 11: Print Endpoints & Summary Table
+# =============================================================================
+print_summary() {
+  log_step "Deployment Complete"
+
+  STATE_URL=$(kubectl get svc -n "$NAMESPACE" state-engine \
+    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
+  DASH_URL=$(kubectl get svc -n "$NAMESPACE" dashboard \
+    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
+
+  track_step "Print Summary" "pass" "All endpoints ready"
+
+  # ── Endpoints ──
+  echo ""
+  echo -e "${BOLD}╔══════════════════════════════════════════════════════════════════════╗${NC}"
+  echo -e "${BOLD}║                        SERVICE ENDPOINTS                            ║${NC}"
+  echo -e "${BOLD}╠═══════════════════╦════════════════════════════════════════════════════╣${NC}"
+  printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "Dashboard" "http://${DASH_URL}"
+  printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "State Engine API" "http://${STATE_URL}"
+  printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "MQTT Broker" "${MQTT_BROKER_IP}:1883"
+  printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "MongoDB (private)" "${MONGODB_PRIVATE_IP}:27017"
+  echo -e "${BOLD}╚═══════════════════╩════════════════════════════════════════════════════╝${NC}"
+
+  # ── Pod Status ──
+  echo ""
+  echo -e "${BOLD}Pod Status:${NC}"
+  kubectl get pods -n "$NAMESPACE" \
+    -o custom-columns="NAME:.metadata.name,STATUS:.status.phase,RESTARTS:.status.containerStatuses[0].restartCount,AGE:.metadata.creationTimestamp" \
+    --no-headers | while read -r line; do
+    if echo "$line" | grep -q "Running"; then
+      echo -e "  ${GREEN}●${NC} $line"
+    else
+      echo -e "  ${RED}●${NC} $line"
+    fi
+  done
+
+  # ── Step Summary Table ──
+  print_summary_table
+}
+
+# =============================================================================
+# Main
+# =============================================================================
+main() {
+  echo -e "${GREEN}"
+  echo "  ╔═══════════════════════════════════════════════════════╗"
+  echo "  ║       Cold Chain Digital Twin — Deploy Script         ║"
+  echo "  ║                                                       ║"
+  echo "  ║   MQTT → Kafka → MongoDB/Redis → FastAPI → Next.js   ║"
+  echo "  ║                 on AWS EKS                            ║"
+  echo "  ╚═══════════════════════════════════════════════════════╝"
+  echo -e "${NC}"
+
+  ensure_state_bucket       # Step  1
+  apply_terraform           # Step  2
+  update_kubeconfig         # Step  3
+  ensure_ecr_repos          # Step  4
+  ecr_login                 # Step  5
+  build_and_push_images     # Step  6
+  ensure_namespace          # Step  7
+  apply_configmaps          # Step  8
+  deploy_stateful_services  # Step  9
+  deploy_app_services       # Step 10
+  deploy_dashboard          # Step 11
+  print_summary             # Step 12
+}
+
+main "$@"

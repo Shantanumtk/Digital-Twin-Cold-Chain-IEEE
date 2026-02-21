@@ -6,7 +6,7 @@ Consumes telemetry from Kafka and stores in MongoDB
 import os
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from confluent_kafka import Consumer, KafkaException
 from pymongo import MongoClient
@@ -46,7 +46,7 @@ def process_telemetry(db, message: dict):
     # Insert raw telemetry
     telemetry_doc = {
         **message,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     }
     db.telemetry.insert_one(telemetry_doc)
     
@@ -64,7 +64,7 @@ def process_telemetry(db, message: dict):
                     "door_open": message.get("door_open"),
                     "compressor_running": message.get("compressor_running"),
                 },
-                "last_updated": datetime.utcnow(),
+                "last_updated": datetime.now(timezone.utc),
                 "mqtt_topic": message.get("mqtt_topic")
             },
             "$inc": {"message_count": 1}
@@ -89,7 +89,7 @@ def process_alert(db, message: dict):
     """Process alert message"""
     alert_doc = {
         **message,
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
         "acknowledged": False
     }
     db.alerts.insert_one(alert_doc)

@@ -8,8 +8,10 @@ import json
 import logging
 import asyncio
 from threading import Thread
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
+from contextlib import asynccontextmanager
+from enum import Enum
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,11 +38,139 @@ KAFKA_TOPICS = os.getenv("KAFKA_TOPICS", "coldchain.telemetry.trucks,coldchain.t
 redis_client = RedisClient()
 mongo_client = MongoDBClient()
 
-# FastAPI app
+
+# =============================================================================
+# Kafka Consumer (Background Thread)
+# =============================================================================
+
+kafka_consumer_running = False
+
+
+def kafka_consumer_thread():
+    """Background thread to consume Kafka messages"""
+    global kafka_consumer_running
+
+    consumer_config = {
+        'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS,
+        'group.id': KAFKA_GROUP_ID,
+        'auto.offset.reset': 'latest',
+        'enable.auto.commit': True,
+    }
+
+    consumer = Consumer(consumer_config)
+    consumer.subscribe(KAFKA_TOPICS.split(','))
+
+    logger.info("Kafka consumer started")
+    kafka_consumer_running = True
+
+    message_count = 0
+
+    try:
+        while kafka_consumer_running:
+            msg = consumer.poll(1.0)
+
+            if msg is None:
+                continue
+            if msg.error():
+                logger.error(f"Consumer error: {msg.error()}")
+                continue
+
+            try:
+                topic = msg.topic()
+                value = json.loads(msg.value().decode('utf-8'))
+
+                if topic == "coldchain.alerts":
+                    process_alert(value)
+                else:
+                    process_telemetry(value)
+
+                message_count += 1
+                if message_count % 500 == 0:
+                    logger.info(f"State Engine processed {message_count} messages")
+
+            except Exception as e:
+                logger.error(f"Processing error: {e}")
+
+    except Exception as e:
+        logger.error(f"Kafka consumer error: {e}")
+    finally:
+        consumer.close()
+        kafka_consumer_running = False
+
+
+def process_telemetry(telemetry: dict):
+    """Process telemetry and update state"""
+    asset_id = telemetry.get("truck_id") or telemetry.get("sensor_id")
+    if not asset_id:
+        return
+
+    # Calculate state
+    state_result = StateCalculator.calculate_state(telemetry)
+
+    # Build state document
+    state_doc = {
+        "asset_type": telemetry.get("asset_type"),
+        "state": state_result["state"],
+        "reasons": state_result["reasons"],
+        "temperature_c": telemetry.get("temperature_c"),
+        "humidity_pct": telemetry.get("humidity_pct"),
+        "door_open": telemetry.get("door_open"),
+        "compressor_running": telemetry.get("compressor_running"),
+        "mqtt_topic": telemetry.get("mqtt_topic"),
+        "last_telemetry_at": telemetry.get("timestamp")
+    }
+
+    # Add location for trucks
+    if telemetry.get("latitude") and telemetry.get("longitude"):
+        state_doc["location"] = {
+            "latitude": telemetry.get("latitude"),
+            "longitude": telemetry.get("longitude"),
+            "speed_kmh": telemetry.get("speed_kmh")
+        }
+
+    # Store in Redis
+    redis_client.set_asset_state(asset_id, state_doc)
+
+    # Handle alerts
+    if state_result["state"] in ["WARNING", "CRITICAL"]:
+        redis_client.set_active_alert(asset_id, {
+            "state": state_result["state"],
+            "reasons": state_result["reasons"],
+            "temperature_c": telemetry.get("temperature_c")
+        })
+    else:
+        redis_client.clear_alert(asset_id)
+
+
+def process_alert(alert: dict):
+    """Process alert from Kafka"""
+    asset_id = alert.get("asset_id")
+    if asset_id:
+        redis_client.set_active_alert(asset_id, alert)
+
+
+# =============================================================================
+# Lifespan & FastAPI App
+# =============================================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    thread = Thread(target=kafka_consumer_thread, daemon=True)
+    thread.start()
+    logger.info("State Engine started")
+    yield
+    # Shutdown
+    global kafka_consumer_running
+    kafka_consumer_running = False
+    logger.info("State Engine shutting down")
+
+
 app = FastAPI(
     title="Cold Chain Digital Twin - State Engine",
     description="Real-time asset state and REST API",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 # CORS
@@ -51,6 +181,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# =============================================================================
+# Enums for Input Validation
+# =============================================================================
+
+class AssetStateFilter(str, Enum):
+    NORMAL = "NORMAL"
+    WARNING = "WARNING"
+    CRITICAL = "CRITICAL"
+
+
+class AssetTypeFilter(str, Enum):
+    TRUCK = "refrigerated_truck"
+    COLD_ROOM = "cold_room"
 
 
 # =============================================================================
@@ -74,7 +219,7 @@ class AssetState(BaseModel):
     humidity_pct: Optional[float] = None
     door_open: Optional[bool] = None
     compressor_running: Optional[bool] = None
-    location: Optional[dict] = None  # Make location optional with default None
+    location: Optional[dict] = None
     updated_at: Optional[str] = None
 
 
@@ -87,126 +232,8 @@ class StatsResponse(BaseModel):
 
 
 # =============================================================================
-# Kafka Consumer (Background Thread)
-# =============================================================================
-
-kafka_consumer_running = False
-
-
-def kafka_consumer_thread():
-    """Background thread to consume Kafka messages"""
-    global kafka_consumer_running
-    
-    consumer_config = {
-        'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS,
-        'group.id': KAFKA_GROUP_ID,
-        'auto.offset.reset': 'latest',
-        'enable.auto.commit': True,
-    }
-    
-    consumer = Consumer(consumer_config)
-    consumer.subscribe(KAFKA_TOPICS.split(','))
-    
-    logger.info("Kafka consumer started")
-    kafka_consumer_running = True
-    
-    message_count = 0
-    
-    try:
-        while kafka_consumer_running:
-            msg = consumer.poll(1.0)
-            
-            if msg is None:
-                continue
-            if msg.error():
-                logger.error(f"Consumer error: {msg.error()}")
-                continue
-            
-            try:
-                topic = msg.topic()
-                value = json.loads(msg.value().decode('utf-8'))
-                
-                if topic == "coldchain.alerts":
-                    process_alert(value)
-                else:
-                    process_telemetry(value)
-                
-                message_count += 1
-                if message_count % 500 == 0:
-                    logger.info(f"State Engine processed {message_count} messages")
-                    
-            except Exception as e:
-                logger.error(f"Processing error: {e}")
-                
-    except Exception as e:
-        logger.error(f"Kafka consumer error: {e}")
-    finally:
-        consumer.close()
-        kafka_consumer_running = False
-
-
-def process_telemetry(telemetry: dict):
-    """Process telemetry and update state"""
-    asset_id = telemetry.get("truck_id") or telemetry.get("sensor_id")
-    if not asset_id:
-        return
-    
-    # Calculate state
-    state_result = StateCalculator.calculate_state(telemetry)
-    
-    # Build state document
-    state_doc = {
-        "asset_type": telemetry.get("asset_type"),
-        "state": state_result["state"],
-        "reasons": state_result["reasons"],
-        "temperature_c": telemetry.get("temperature_c"),
-        "humidity_pct": telemetry.get("humidity_pct"),
-        "door_open": telemetry.get("door_open"),
-        "compressor_running": telemetry.get("compressor_running"),
-        "mqtt_topic": telemetry.get("mqtt_topic"),
-        "last_telemetry_at": telemetry.get("timestamp")
-    }
-    
-    # Add location for trucks
-    if telemetry.get("latitude") and telemetry.get("longitude"):
-        state_doc["location"] = {
-            "latitude": telemetry.get("latitude"),
-            "longitude": telemetry.get("longitude"),
-            "speed_kmh": telemetry.get("speed_kmh")
-        }
-    
-    # Store in Redis
-    redis_client.set_asset_state(asset_id, state_doc)
-    
-    # Handle alerts
-    if state_result["state"] in ["WARNING", "CRITICAL"]:
-        redis_client.set_active_alert(asset_id, {
-            "state": state_result["state"],
-            "reasons": state_result["reasons"],
-            "temperature_c": telemetry.get("temperature_c")
-        })
-    else:
-        redis_client.clear_alert(asset_id)
-
-
-def process_alert(alert: dict):
-    """Process alert from Kafka"""
-    asset_id = alert.get("asset_id")
-    if asset_id:
-        redis_client.set_active_alert(asset_id, alert)
-
-
-# =============================================================================
 # REST API Endpoints
 # =============================================================================
-
-@app.on_event("startup")
-async def startup_event():
-    """Start Kafka consumer on startup"""
-    thread = Thread(target=kafka_consumer_thread, daemon=True)
-    thread.start()
-    logger.info("State Engine started")
-
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
@@ -216,24 +243,24 @@ async def health_check():
         redis=redis_client.ping(),
         mongodb=mongo_client.ping(),
         kafka_consumer=kafka_consumer_running,
-        timestamp=datetime.utcnow().isoformat()
+        timestamp=datetime.now(timezone.utc).isoformat()
     )
 
 
 @app.get("/assets", response_model=List[AssetState])
 async def get_all_assets(
-    state: Optional[str] = Query(None, description="Filter by state: NORMAL, WARNING, CRITICAL"),
-    asset_type: Optional[str] = Query(None, description="Filter by type: refrigerated_truck, cold_room")
+    state: Optional[AssetStateFilter] = Query(None, description="Filter by state"),
+    asset_type: Optional[AssetTypeFilter] = Query(None, description="Filter by type"),
 ):
     """Get all assets with current state"""
     assets = redis_client.get_all_assets()
-    
+
     if state:
-        assets = [a for a in assets if a.get("state") == state]
-    
+        assets = [a for a in assets if a.get("state") == state.value]
+
     if asset_type:
-        assets = [a for a in assets if a.get("asset_type") == asset_type]
-    
+        assets = [a for a in assets if a.get("asset_type") == asset_type.value]
+
     return assets
 
 

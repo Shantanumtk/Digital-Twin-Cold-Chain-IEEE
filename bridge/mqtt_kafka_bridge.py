@@ -6,7 +6,7 @@ Subscribes to MQTT topics and produces to Kafka
 import os
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
 from confluent_kafka import Producer
@@ -94,7 +94,7 @@ def on_message(client, userdata, msg):
         payload = json.loads(msg.payload.decode('utf-8'))
 
         payload['mqtt_topic'] = topic
-        payload['ingested_at'] = datetime.utcnow().isoformat() + 'Z'
+        payload['ingested_at'] = datetime.now(timezone.utc).isoformat() + 'Z'
 
         # Route to Kafka topic
         if topic.startswith("fleet/"):
@@ -118,11 +118,11 @@ def on_message(client, userdata, msg):
         anomalies = detect_anomalies(payload)
         for anomaly in anomalies:
             alert = {
-                "alert_id": f"{key}-{anomaly['type']}-{datetime.utcnow().timestamp()}",
+                "alert_id": f"{key}-{anomaly['type']}-{datetime.now(timezone.utc).timestamp()}",
                 "asset_id": key,
                 "asset_type": payload.get("asset_type"),
                 "anomaly": anomaly,
-                "detected_at": datetime.utcnow().isoformat() + 'Z'
+                "detected_at": datetime.now(timezone.utc).isoformat() + 'Z'
             }
             producer.produce(
                 topic=KAFKA_TOPIC_ALERTS,

@@ -4,7 +4,7 @@ MongoDB Client - For historical queries
 
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
 from pymongo import MongoClient
@@ -38,7 +38,7 @@ class MongoDBClient:
     ) -> List[dict]:
         """Get historical telemetry for an asset"""
         try:
-            since = datetime.utcnow() - timedelta(hours=hours)
+            since = datetime.now(timezone.utc) - timedelta(hours=hours)
             
             # Check if truck or room
             query = {
@@ -68,7 +68,7 @@ class MongoDBClient:
     ) -> List[dict]:
         """Get alerts from MongoDB"""
         try:
-            since = datetime.utcnow() - timedelta(hours=hours)
+            since = datetime.now(timezone.utc) - timedelta(hours=hours)
             query = {"created_at": {"$gte": since}}
             
             if asset_id:
@@ -93,7 +93,7 @@ class MongoDBClient:
             from bson import ObjectId
             result = self.db.alerts.update_one(
                 {"_id": ObjectId(alert_id)},
-                {"$set": {"acknowledged": True, "acknowledged_at": datetime.utcnow()}}
+                {"$set": {"acknowledged": True, "acknowledged_at": datetime.now(timezone.utc)}}
             )
             return result.modified_count > 0
         except Exception as e:

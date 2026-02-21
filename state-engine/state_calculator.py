@@ -3,7 +3,7 @@ State Calculator - Computes asset state from telemetry
 """
 
 from enum import Enum
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from typing import Optional
 
 
@@ -92,7 +92,7 @@ class StateCalculator:
             "temperature_c": temperature,
             "door_open": door_open,
             "compressor_running": compressor_running,
-            "calculated_at": datetime.utcnow().isoformat()
+            "calculated_at": datetime.now(timezone.utc).isoformat()
         }
     
     @classmethod

@@ -5,7 +5,7 @@ Redis Client - Manages asset state cache
 import os
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict
 
 import redis
@@ -48,7 +48,7 @@ class RedisClient:
         """Store current state for an asset"""
         try:
             key = f"{ASSET_STATE_PREFIX}{asset_id}"
-            state_data["updated_at"] = datetime.utcnow().isoformat()
+            state_data["updated_at"] = datetime.now(timezone.utc).isoformat()
             self.client.set(key, json.dumps(state_data))
             
             # Add to asset index
@@ -73,13 +73,22 @@ class RedisClient:
             return None
     
     def get_all_assets(self) -> List[dict]:
-        """Get all asset states"""
+        """Get all asset states using pipeline"""
         try:
             asset_ids = self.client.smembers("assets:index")
+            if not asset_ids:
+                return []
+            
+            keys = [f"{ASSET_STATE_PREFIX}{aid}" for aid in asset_ids]
+            pipe = self.client.pipeline(transaction=False)
+            for key in keys:
+                pipe.get(key)
+            results = pipe.execute()
+            
             assets = []
-            for asset_id in asset_ids:
-                state = self.get_asset_state(asset_id)
-                if state:
+            for asset_id, data in zip(asset_ids, results):
+                if data:
+                    state = json.loads(data)
                     state["asset_id"] = asset_id
                     assets.append(state)
             return assets
@@ -100,7 +109,7 @@ class RedisClient:
         """Store active alert with TTL"""
         try:
             key = f"{ALERT_ACTIVE_PREFIX}{asset_id}"
-            alert_data["created_at"] = datetime.utcnow().isoformat()
+            alert_data["created_at"] = datetime.now(timezone.utc).isoformat()
             self.client.setex(key, ttl, json.dumps(alert_data))
             self.client.sadd("alerts:active:index", asset_id)
             return True
@@ -120,20 +129,33 @@ class RedisClient:
             return False
     
     def get_active_alerts(self) -> List[dict]:
-        """Get all active alerts"""
+        """Get all active alerts using pipeline"""
         try:
             alert_ids = self.client.smembers("alerts:active:index")
-            alerts = []
+            if not alert_ids:
+                return []
+            
+            pipe = self.client.pipeline(transaction=False)
             for asset_id in alert_ids:
-                key = f"{ALERT_ACTIVE_PREFIX}{asset_id}"
-                data = self.client.get(key)
+                pipe.get(f"{ALERT_ACTIVE_PREFIX}{asset_id}")
+            results = pipe.execute()
+            
+            alerts = []
+            expired = []
+            for asset_id, data in zip(alert_ids, results):
                 if data:
                     alert = json.loads(data)
                     alert["asset_id"] = asset_id
                     alerts.append(alert)
                 else:
-                    # Alert expired, remove from index
-                    self.client.srem("alerts:active:index", asset_id)
+                    expired.append(asset_id)
+            
+            if expired:
+                pipe = self.client.pipeline(transaction=False)
+                for asset_id in expired:
+                    pipe.srem("alerts:active:index", asset_id)
+                pipe.execute()
+            
             return alerts
         except Exception as e:
             logger.error(f"Failed to get active alerts: {e}")
