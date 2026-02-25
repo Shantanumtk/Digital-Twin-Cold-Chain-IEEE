@@ -28,8 +28,8 @@ PROJECT="coldchain-digital-twin"
 NAMESPACE="coldchain"
 
 ECR_REPOS=(
-  "${PROJECT}-mqtt-kafka-bridge"
-  "${PROJECT}-kafka-consumer"
+  "${PROJECT}-bridge"
+  "${PROJECT}-ingestion"
   "${PROJECT}-state-engine"
   "${PROJECT}-dashboard"
   "coldchain-kafka"
@@ -58,7 +58,7 @@ log_step() {
   CURRENT_STEP=$((CURRENT_STEP + 1))
   echo -e "\n${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo -e "${YELLOW}[${CURRENT_STEP}/${TOTAL_STEPS}] $1${NC}"
-  echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━║━━${NC}"
+  echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 }
 
 log_skip() {
@@ -82,7 +82,7 @@ print_summary_table() {
   echo -e "${BOLD}╔═══════════════════════════════════════════════════════════════════════╗${NC}"
   echo -e "${BOLD}║                     DESTROY STATUS REPORT                             ║${NC}"
   echo -e "${BOLD}╠════╦═══════════════════════════════╦════════╦═════════════════════════╣${NC}"
-  printf  "${BOLD}║ %-2s ║ %-29s ║ %-6s ║ %-23s ║${NC}\n" "#" "Step" "Status" "Detail".   ║
+  printf  "${BOLD}║ %-2s ║ %-29s ║ %-6s ║ %-23s ║${NC}\n" "#" "Step" "Status" "Detail"    ║
   echo -e "${BOLD}╠════╬═══════════════════════════════╬════════╬═════════════════════════╣${NC}"
 
   for i in "${!STEP_NAMES[@]}"; do
