@@ -8,6 +8,9 @@
 
 set -euo pipefail
 
+# Navigate to project root (parent of scripts/)
+cd "$(dirname "$0")/.."
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -23,15 +26,21 @@ ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 PROJECT="coldchain-digital-twin"
 NAMESPACE="coldchain"
 
+# K8s deployment names
 SERVICES=("mqtt-kafka-bridge" "kafka-consumer" "state-engine" "dashboard")
+
+# Local directories containing Dockerfiles
 SERVICE_DIRS=("bridge" "ingestion" "state-engine" "dashboard")
+
+# ECR repo names (must match Terraform ecr.tf)
+ECR_REPO_NAMES=("${PROJECT}-bridge" "${PROJECT}-ingestion" "${PROJECT}-state-engine" "${PROJECT}-dashboard")
 
 # Step tracking arrays
 STEP_NAMES=()
 STEP_STATUSES=()
 STEP_DETAILS=()
 
-TOTAL_STEPS=12
+TOTAL_STEPS=13
 CURRENT_STEP=0
 
 # =============================================================================
@@ -39,7 +48,6 @@ CURRENT_STEP=0
 # =============================================================================
 
 track_step() {
-  # $1 = step name, $2 = status (pass/skip/fail), $3 = detail message
   STEP_NAMES+=("$1")
   STEP_STATUSES+=("$2")
   STEP_DETAILS+=("$3")
@@ -82,18 +90,14 @@ print_summary_table() {
     local status="${STEP_STATUSES[$i]}"
     local detail="${STEP_DETAILS[$i]}"
 
-    # Truncate detail if too long
     if [ ${#detail} -gt 23 ]; then
       detail="${detail:0:20}..."
     fi
-
-    # Truncate name if too long
     if [ ${#name} -gt 29 ]; then
       name="${name:0:26}..."
     fi
 
-    local icon=""
-    local color=""
+    local icon="" color=""
     case "$status" in
       pass) icon="✅"; color="${GREEN}" ;;
       skip) icon="⏭️ "; color="${CYAN}" ;;
@@ -105,7 +109,6 @@ print_summary_table() {
 
   echo -e "${BOLD}╚════╩═══════════════════════════════╩════════╩═════════════════════════╝${NC}"
 
-  # Count results
   local passed=0 skipped=0 failed=0
   for s in "${STEP_STATUSES[@]}"; do
     case "$s" in
@@ -121,7 +124,7 @@ print_summary_table() {
 }
 
 # =============================================================================
-# Step 0: Terraform State Bucket
+# Step 1: Terraform State Bucket
 # =============================================================================
 ensure_state_bucket() {
   log_step "Ensure Terraform State Bucket"
@@ -159,7 +162,7 @@ ensure_state_bucket() {
 }
 
 # =============================================================================
-# Step 1: Terraform Apply
+# Step 2: Terraform Apply
 # =============================================================================
 apply_terraform() {
   log_step "Apply Terraform Infrastructure"
@@ -202,7 +205,7 @@ apply_terraform() {
 }
 
 # =============================================================================
-# Step 2: Update Kubeconfig
+# Step 3: Update Kubeconfig
 # =============================================================================
 update_kubeconfig() {
   log_step "Update Kubeconfig for EKS"
@@ -223,39 +226,33 @@ update_kubeconfig() {
 }
 
 # =============================================================================
-# Step 3: Create ECR Repositories
+# Step 4: Verify ECR Repositories (created by Terraform)
 # =============================================================================
 ensure_ecr_repos() {
-  log_step "Ensure ECR Repositories Exist"
+  log_step "Verify ECR Repositories"
 
-  local created=0
-  local existed=0
+  ALL_REPOS=("${ECR_REPO_NAMES[@]}" "coldchain-kafka" "coldchain-redis")
 
-  for svc in "${SERVICES[@]}"; do
-    REPO_NAME="${PROJECT}-${svc}"
-    if aws ecr describe-repositories --repository-names "$REPO_NAME" --region "$AWS_REGION" &>/dev/null; then
-      log_skip "ECR repo $REPO_NAME exists"
-      existed=$((existed + 1))
+  local all_exist=true
+  for repo in "${ALL_REPOS[@]}"; do
+    if aws ecr describe-repositories --repository-names "$repo" --region "$AWS_REGION" &>/dev/null; then
+      log_skip "ECR repo $repo exists"
     else
-      log_info "Creating ECR repo $REPO_NAME..."
-      aws ecr create-repository \
-        --repository-name "$REPO_NAME" \
-        --region "$AWS_REGION" \
-        --image-scanning-configuration scanOnPush=true
-      log_done "Created $REPO_NAME"
-      created=$((created + 1))
+      log_error "ECR repo $repo missing — check terraform/ecr.tf"
+      all_exist=false
     fi
   done
 
-  if [ "$created" -eq 0 ]; then
-    track_step "ECR Repositories" "skip" "All ${existed} exist"
+  if [ "$all_exist" = true ]; then
+    track_step "ECR Repositories" "skip" "All ${#ALL_REPOS[@]} exist"
   else
-    track_step "ECR Repositories" "pass" "Created ${created}, existed ${existed}"
+    track_step "ECR Repositories" "fail" "Missing repos"
+    return 1
   fi
 }
 
 # =============================================================================
-# Step 4: ECR Login
+# Step 5: ECR Login
 # =============================================================================
 ecr_login() {
   log_step "ECR Docker Login"
@@ -268,40 +265,81 @@ ecr_login() {
 }
 
 # =============================================================================
-# Step 5: Build and Push Images
+# Step 6: Build and Push Application Images
 # =============================================================================
 build_and_push_images() {
-  log_step "Build and Push Docker Images"
+  log_step "Build and Push Application Images"
 
   local pushed=0
 
   for i in "${!SERVICES[@]}"; do
     local svc="${SERVICES[$i]}"
     local dir="${SERVICE_DIRS[$i]}"
-    local repo="${ECR_REGISTRY}/${PROJECT}-${svc}"
+    local repo="${ECR_REGISTRY}/${ECR_REPO_NAMES[$i]}"
     local tag="latest"
 
-    # Skip dashboard here — it's built in step 10 with the API URL
+    # Skip dashboard here — it's built in step 12 with the API URL
     if [ "$svc" = "dashboard" ]; then
-      log_info "Skipping dashboard (built in step 10 with API URL)"
+      log_info "Skipping dashboard (built in step 12 with API URL)"
       continue
     fi
 
-    log_info "Building $svc..."
+    log_info "Building $svc from $dir/ (linux/amd64)..."
 
     docker build --platform linux/amd64 -t "${svc}:${tag}" "$dir"
     docker tag "${svc}:${tag}" "${repo}:${tag}"
     docker push "${repo}:${tag}"
     pushed=$((pushed + 1))
 
-    log_done "Pushed $svc"
+    log_done "Pushed $svc → ${ECR_REPO_NAMES[$i]}"
   done
 
-  track_step "Build & Push Images" "pass" "Pushed ${pushed} images"
+  track_step "Build & Push App Images" "pass" "Pushed ${pushed} images"
 }
 
 # =============================================================================
-# Step 6: Create Namespace
+# Step 7: Push Third-Party Images to ECR
+# =============================================================================
+push_thirdparty_images() {
+  log_step "Push Third-Party Images to ECR"
+
+  THIRDPARTY_IMAGES=(
+    "coldchain-kafka|apache/kafka:3.9.0"
+    "coldchain-redis|redis:7-alpine"
+  )
+
+  local pushed=0
+  local skipped=0
+
+  for entry in "${THIRDPARTY_IMAGES[@]}"; do
+    local repo="${entry%%|*}"
+    local source="${entry##*|}"
+    local tag="${source##*:}"
+    local target="${ECR_REGISTRY}/${repo}:${tag}"
+
+    if aws ecr describe-images --repository-name "$repo" --image-ids imageTag="$tag" --region "$AWS_REGION" &>/dev/null 2>&1; then
+      log_skip "$repo:$tag already in ECR"
+      skipped=$((skipped + 1))
+      continue
+    fi
+
+    log_info "Pulling $source (linux/amd64)..."
+    docker pull --platform linux/amd64 "$source"
+    docker tag "$source" "$target"
+    docker push "$target"
+    log_done "Pushed $repo:$tag"
+    pushed=$((pushed + 1))
+  done
+
+  if [ "$pushed" -eq 0 ]; then
+    track_step "Third-Party Images" "skip" "All ${skipped} exist in ECR"
+  else
+    track_step "Third-Party Images" "pass" "Pushed ${pushed}, skipped ${skipped}"
+  fi
+}
+
+# =============================================================================
+# Step 8: Create Namespace
 # =============================================================================
 ensure_namespace() {
   log_step "Ensure Kubernetes Namespace"
@@ -318,7 +356,7 @@ ensure_namespace() {
 }
 
 # =============================================================================
-# Step 7: Apply ConfigMaps (always update — IPs may have changed)
+# Step 9: Apply ConfigMaps (always update — IPs may have changed)
 # =============================================================================
 apply_configmaps() {
   log_step "Apply ConfigMaps with Current IPs"
@@ -356,10 +394,13 @@ apply_configmaps() {
 }
 
 # =============================================================================
-# Step 8: Deploy Kafka & Redis (StatefulSets)
+# Step 10: Deploy Kafka & Redis (StatefulSets)
 # =============================================================================
 deploy_stateful_services() {
   log_step "Deploy Kafka & Redis StatefulSets"
+
+  # Ensure StorageClass exists before creating PVCs
+  kubectl apply -f k8s/storage/
 
   local kafka_action="deployed"
   local redis_action="deployed"
@@ -397,8 +438,8 @@ deploy_stateful_services() {
   # Wait only if something was deployed
   if [ "$kafka_action" != "skipped" ] || [ "$redis_action" != "skipped" ]; then
     log_info "Waiting for Kafka and Redis to be ready..."
-    kubectl wait --for=condition=ready pod -l app=kafka -n "$NAMESPACE" --timeout=120s
-    kubectl wait --for=condition=ready pod -l app=redis -n "$NAMESPACE" --timeout=120s
+    kubectl rollout status statefulset kafka -n "$NAMESPACE" --timeout=180s
+    kubectl rollout status statefulset redis -n "$NAMESPACE" --timeout=180s
   fi
 
   if [ "$kafka_action" = "skipped" ] && [ "$redis_action" = "skipped" ]; then
@@ -410,7 +451,7 @@ deploy_stateful_services() {
 }
 
 # =============================================================================
-# Step 9: Deploy Application Services
+# Step 11: Deploy Application Services
 # =============================================================================
 deploy_app_services() {
   log_step "Deploy Application Services"
@@ -425,13 +466,8 @@ deploy_app_services() {
     local svc_dir="${APP_SERVICES[$i]}"
     local deploy_name="${DEPLOY_NAMES[$i]}"
 
+    # Check if deployment already exists
     if kubectl get deployment "$deploy_name" -n "$NAMESPACE" &>/dev/null; then
-      READY=$(kubectl get deployment "$deploy_name" -n "$NAMESPACE" \
-        -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-      DESIRED=$(kubectl get deployment "$deploy_name" -n "$NAMESPACE" \
-        -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "1")
-
-      # Apply latest manifests + restart to pick up configmap/image changes
       kubectl apply -f "k8s/${svc_dir}/"
       kubectl rollout restart deployment "$deploy_name" -n "$NAMESPACE"
       log_info "Restarted $deploy_name to pick up latest changes"
@@ -444,16 +480,17 @@ deploy_app_services() {
   done
 
   log_info "Waiting for services to be ready..."
-  kubectl wait --for=condition=ready pod -l app=mqtt-kafka-bridge -n "$NAMESPACE" --timeout=120s
-  kubectl wait --for=condition=ready pod -l app=kafka-consumer -n "$NAMESPACE" --timeout=120s
-  kubectl wait --for=condition=ready pod -l app=state-engine -n "$NAMESPACE" --timeout=120s
+  for deploy_name in "${DEPLOY_NAMES[@]}"; do
+    kubectl rollout status deployment "$deploy_name" -n "$NAMESPACE" --timeout=180s
+    log_done "$deploy_name ready"
+  done
 
   log_done "All application services running"
   track_step "Application Services" "pass" "New:${deployed} Restarted:${restarted}"
 }
 
 # =============================================================================
-# Step 10: Deploy Dashboard
+# Step 12: Deploy Dashboard
 # =============================================================================
 deploy_dashboard() {
   log_step "Deploy Dashboard"
@@ -478,18 +515,23 @@ deploy_dashboard() {
   docker tag dashboard:latest "${repo}:latest"
   docker push "${repo}:latest"
 
-  kubectl apply -f k8s/dashboard/
-  kubectl rollout restart deployment dashboard -n "$NAMESPACE" 2>/dev/null || true
+  # Only restart if deployment already exists, otherwise just create
+  if kubectl get deployment dashboard -n "$NAMESPACE" &>/dev/null; then
+    kubectl apply -f k8s/dashboard/
+    kubectl rollout restart deployment dashboard -n "$NAMESPACE"
+  else
+    kubectl apply -f k8s/dashboard/
+  fi
 
   log_info "Waiting for dashboard pods..."
-  kubectl wait --for=condition=ready pod -l app=dashboard -n "$NAMESPACE" --timeout=120s
+  kubectl rollout status deployment dashboard -n "$NAMESPACE" --timeout=180s
 
   log_done "Dashboard deployed"
   track_step "Dashboard" "pass" "API=$STATE_ENGINE_URL"
 }
 
 # =============================================================================
-# Step 11: Print Endpoints & Summary Table
+# Step 13: Print Endpoints & Summary Table
 # =============================================================================
 print_summary() {
   log_step "Deployment Complete"
@@ -548,12 +590,13 @@ main() {
   ensure_ecr_repos          # Step  4
   ecr_login                 # Step  5
   build_and_push_images     # Step  6
-  ensure_namespace          # Step  7
-  apply_configmaps          # Step  8
-  deploy_stateful_services  # Step  9
-  deploy_app_services       # Step 10
-  deploy_dashboard          # Step 11
-  print_summary             # Step 12
+  push_thirdparty_images    # Step  7
+  ensure_namespace          # Step  8
+  apply_configmaps          # Step  9
+  deploy_stateful_services  # Step 10
+  deploy_app_services       # Step 11
+  deploy_dashboard          # Step 12
+  print_summary             # Step 13
 }
 
 main "$@"

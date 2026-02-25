@@ -10,12 +10,16 @@
 
 set -euo pipefail
 
+# Navigate to project root (parent of scripts/)
+cd "$(dirname "$0")/.."
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
+DIM='\033[2m'
 NC='\033[0m'
 
 AWS_REGION="us-west-2"
@@ -28,6 +32,8 @@ ECR_REPOS=(
   "${PROJECT}-kafka-consumer"
   "${PROJECT}-state-engine"
   "${PROJECT}-dashboard"
+  "coldchain-kafka"
+  "coldchain-redis"
 )
 
 # Step tracking
@@ -52,7 +58,7 @@ log_step() {
   CURRENT_STEP=$((CURRENT_STEP + 1))
   echo -e "\n${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo -e "${YELLOW}[${CURRENT_STEP}/${TOTAL_STEPS}] $1${NC}"
-  echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━║━━${NC}"
 }
 
 log_skip() {
@@ -73,10 +79,10 @@ log_error() {
 
 print_summary_table() {
   echo ""
-  echo -e "${BOLD}╔══════════════════════════════════════════════════════════════════════╗${NC}"
-  echo -e "${BOLD}║                     DESTROY STATUS REPORT                           ║${NC}"
+  echo -e "${BOLD}╔═══════════════════════════════════════════════════════════════════════╗${NC}"
+  echo -e "${BOLD}║                     DESTROY STATUS REPORT                             ║${NC}"
   echo -e "${BOLD}╠════╦═══════════════════════════════╦════════╦═════════════════════════╣${NC}"
-  printf  "${BOLD}║ %-2s ║ %-29s ║ %-6s ║ %-23s ║${NC}\n" "#" "Step" "Status" "Detail"
+  printf  "${BOLD}║ %-2s ║ %-29s ║ %-6s ║ %-23s ║${NC}\n" "#" "Step" "Status" "Detail".   ║
   echo -e "${BOLD}╠════╬═══════════════════════════════╬════════╬═════════════════════════╣${NC}"
 
   for i in "${!STEP_NAMES[@]}"; do
@@ -152,14 +158,12 @@ confirm_destroy() {
 destroy_kubernetes() {
   log_step "Delete Kubernetes Resources"
 
-  # Check if kubectl can reach the cluster
   if ! kubectl cluster-info &>/dev/null 2>&1; then
     log_skip "Cannot reach K8s cluster (already destroyed or kubeconfig stale)"
     track_step "Kubernetes Resources" "skip" "Cluster unreachable"
     return 0
   fi
 
-  # Check if namespace exists
   if ! kubectl get namespace "$NAMESPACE" &>/dev/null 2>&1; then
     log_skip "Namespace $NAMESPACE doesn't exist"
     track_step "Kubernetes Resources" "skip" "Namespace gone"
@@ -209,7 +213,7 @@ destroy_kubernetes() {
 
   # Delete configmaps
   log_info "Deleting configmaps..."
-  for cm in bridge-config ingestion-config state-engine-config; do
+  for cm in bridge-config ingestion-config state-engine-config kafka-config; do
     if kubectl get configmap "$cm" -n "$NAMESPACE" &>/dev/null 2>&1; then
       kubectl delete configmap "$cm" -n "$NAMESPACE" 2>/dev/null || true
       deleted=$((deleted + 1))
@@ -220,8 +224,6 @@ destroy_kubernetes() {
   log_info "Deleting namespace $NAMESPACE..."
   kubectl delete namespace "$NAMESPACE" --timeout=120s 2>/dev/null || true
 
-  # Wait for namespace termination
-  log_info "Waiting for namespace to terminate..."
   local retries=0
   while kubectl get namespace "$NAMESPACE" &>/dev/null 2>&1 && [ $retries -lt 30 ]; do
     sleep 5
@@ -252,7 +254,7 @@ wait_for_lb_cleanup() {
 }
 
 # =============================================================================
-# Step 4: Delete ALL ECR Images
+# Step 4: Delete ALL ECR Images & Repositories
 # =============================================================================
 delete_ecr_images() {
   log_step "Delete ECR Repositories & All Images"
@@ -267,48 +269,31 @@ delete_ecr_images() {
       continue
     fi
 
-    # List ALL image digests in the repo
-    IMAGE_IDS=$(aws ecr list-images \
-      --repository-name "$repo" \
-      --region "$AWS_REGION" \
-      --query 'imageIds[*]' \
-      --output json 2>/dev/null || echo "[]")
+    # Batch delete all images (loop for repos with 100+ images)
+    while true; do
+      BATCH=$(aws ecr list-images \
+        --repository-name "$repo" \
+        --region "$AWS_REGION" \
+        --query 'imageIds[0:100]' \
+        --output json 2>/dev/null || echo "[]")
 
-    IMAGE_COUNT=$(echo "$IMAGE_IDS" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+      BATCH_COUNT=$(echo "$BATCH" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 
-    if [ "$IMAGE_COUNT" -gt 0 ]; then
-      log_info "Deleting $IMAGE_COUNT images from $repo..."
+      if [ "$BATCH_COUNT" -eq 0 ]; then
+        break
+      fi
 
-      # Batch delete all images (ECR supports up to 100 per call)
-      # Loop in case there are more than 100
-      while true; do
-        BATCH=$(aws ecr list-images \
-          --repository-name "$repo" \
-          --region "$AWS_REGION" \
-          --query 'imageIds[0:100]' \
-          --output json 2>/dev/null || echo "[]")
+      aws ecr batch-delete-image \
+        --repository-name "$repo" \
+        --region "$AWS_REGION" \
+        --image-ids "$BATCH" >/dev/null 2>&1
 
-        BATCH_COUNT=$(echo "$BATCH" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+      log_done "Deleted batch of $BATCH_COUNT images from $repo"
 
-        if [ "$BATCH_COUNT" -eq 0 ]; then
-          break
-        fi
-
-        aws ecr batch-delete-image \
-          --repository-name "$repo" \
-          --region "$AWS_REGION" \
-          --image-ids "$BATCH" >/dev/null 2>&1
-
-        log_done "Deleted batch of $BATCH_COUNT images from $repo"
-
-        # Break if we got fewer than 100 (last batch)
-        if [ "$BATCH_COUNT" -lt 100 ]; then
-          break
-        fi
-      done
-    else
-      log_info "No images in $repo"
-    fi
+      if [ "$BATCH_COUNT" -lt 100 ]; then
+        break
+      fi
+    done
 
     # Delete the repository itself
     aws ecr delete-repository \
@@ -333,20 +318,18 @@ delete_ecr_images() {
 delete_log_groups() {
   log_step "Delete CloudWatch Log Groups"
 
-  # These are the log groups Terraform creates but often fail to destroy
   LOG_GROUPS=(
     "/aws/vpc/${PROJECT}-flow-logs"
     "/aws/eks/${PROJECT}-eks/cluster"
   )
 
-  # Also find any additional log groups matching our project
+  # Dynamically find any additional log groups matching our project
   EXTRA_GROUPS=$(aws logs describe-log-groups \
     --log-group-name-prefix "/aws/" \
     --region "$AWS_REGION" \
     --query "logGroups[?contains(logGroupName, '${PROJECT}')].logGroupName" \
     --output text 2>/dev/null || echo "")
 
-  # Merge both lists, deduplicate
   ALL_GROUPS=("${LOG_GROUPS[@]}")
   for g in $EXTRA_GROUPS; do
     local found=0
@@ -402,13 +385,11 @@ destroy_terraform() {
 
   cd terraform
 
-  # Initialize if needed
   if [ ! -d ".terraform" ]; then
     log_info "Running terraform init..."
     terraform init
   fi
 
-  # Check if there's anything to destroy
   RESOURCE_COUNT=$(terraform state list 2>/dev/null | wc -l || echo "0")
 
   if [ "$RESOURCE_COUNT" -eq 0 ]; then
@@ -427,9 +408,6 @@ destroy_terraform() {
     track_step "Terraform Destroy" "pass" "${RESOURCE_COUNT} resources"
   else
     log_error "Terraform destroy had errors — retrying once..."
-
-    # Common fix: some resources have dependencies that fail on first try
-    # (ENIs from LoadBalancers, SGs with cross-references)
     sleep 15
     if terraform destroy -auto-approve; then
       log_done "Terraform destroy succeeded on retry"
@@ -465,7 +443,6 @@ clean_kubeconfig() {
     log_done "Removed $ctx"
   done
 
-  # Also remove the cluster and user entries
   EKS_CLUSTER=$(kubectl config get-clusters 2>/dev/null | grep "$PROJECT" || echo "")
   for cl in $EKS_CLUSTER; do
     kubectl config delete-cluster "$cl" 2>/dev/null || true
@@ -504,8 +481,8 @@ main() {
   echo "  ╔═══════════════════════════════════════════════════════╗"
   echo "  ║      Cold Chain Digital Twin — Destroy Script         ║"
   echo "  ║                                                       ║"
-  echo "  ║   Tears down: EKS │ EC2 │ VPC │ ECR │ CloudWatch     ║"
-  echo "  ║   Preserves:  S3 state bucket                        ║"
+  echo "  ║   Tears down: EKS │ EC2 │ VPC │ ECR │ CloudWatch      ║"
+  echo "  ║   Preserves:  S3 state bucket                         ║"
   echo "  ╚═══════════════════════════════════════════════════════╝"
   echo -e "${NC}"
 
