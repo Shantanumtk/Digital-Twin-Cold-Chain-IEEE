@@ -7,7 +7,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { message, conversation_id, agent } = body;
 
-    // Determine endpoint based on agent type
     const endpoint =
       agent === "simulate"
         ? `${MCP_AGENT_URL}/api/chat/simulate`

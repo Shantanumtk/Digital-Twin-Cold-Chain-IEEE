@@ -8,6 +8,7 @@ import AssetGrid from '@/components/AssetGrid';
 import AssetMap from '@/components/AssetMap';
 import AlertPanel from '@/components/AlertPanel';
 import AssetDetail from '@/components/AssetDetail';
+import ChatWidget from '@/components/ChatWidget';
 import { Asset } from '@/types';
 
 export default function Dashboard() {
@@ -140,6 +141,38 @@ export default function Dashboard() {
 
   const renderContent = () => {
     switch (activeView) {
+      case 'chat':
+        return (
+          <ChatWidget
+            agent="query"
+            title=" Cold Chain Query Agent "
+            placeholder="Ask about your cold chain data..."
+            suggestions={[
+              "Which assets are critical right now?",
+              "Why is truck01 temperature rising?",
+              "Show me all breaches in the last 24 hours",
+              "Compare all trucks side by side",
+              "What is the current state of sensor-room-site1-room1?",
+            ]}
+          />
+        );
+
+      case 'simulate':
+        return (
+          <ChatWidget
+            agent="simulate"
+            title=" Simulation Controller "
+            placeholder="Describe a scenario to simulate..."
+            suggestions={[
+              "Open truck02's door for 3 minutes",
+              "Simulate compressor failure on truck05",
+              "Trigger a power outage at site1 for 10 minutes",
+              "Scale the fleet to 20 trucks",
+              "What is the current simulator status?",
+            ]}
+          />
+        );
+
       case 'map':
         return (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -10,6 +10,11 @@ RUN npm install
 FROM base AS builder
 WORKDIR /app
 
+ARG NEXT_PUBLIC_API_URL
+ARG MCP_AGENT_URL=http://localhost:8001
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV MCP_AGENT_URL=$MCP_AGENT_URL
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build

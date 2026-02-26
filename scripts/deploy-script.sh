@@ -533,6 +533,7 @@ deploy_dashboard() {
   local repo="${ECR_REGISTRY}/${PROJECT}-dashboard"
   docker build --platform linux/amd64 \
     --build-arg NEXT_PUBLIC_API_URL="http://${STATE_ENGINE_URL}" \
+    --build-arg MCP_AGENT_URL="http://${MQTT_BROKER_PRIVATE_IP}:8001" \
     -t dashboard:latest dashboard/
   docker tag dashboard:latest "${repo}:latest"
   docker push "${repo}:latest"
@@ -542,6 +543,13 @@ deploy_dashboard() {
     kubectl rollout restart deployment dashboard -n "$NAMESPACE"
   else
     kubectl apply -f k8s/dashboard/
+  fi
+
+  # Set MCP Agent URL if deploying with agent
+  if [ -n "$ANTHROPIC_KEY" ]; then
+    kubectl set env deployment/dashboard -n "$NAMESPACE" \
+      MCP_AGENT_URL="http://${MQTT_BROKER_PRIVATE_IP}:8001"
+    log_done "MCP Agent URL set to http://${MQTT_BROKER_PRIVATE_IP}:8001"
   fi
 
   log_info "Waiting for dashboard pods..."
@@ -734,6 +742,8 @@ docker run -d \
   --name mcp-agent \
   --network host \
   --env-file .env \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /home/ubuntu/CPSC-597-Digital-Twin-Cold-Chain:/home/ubuntu/CPSC-597-Digital-Twin-Cold-Chain:ro \
   --restart unless-stopped \
   mcp-agent:latest
 

@@ -47,6 +47,14 @@ resource "aws_security_group" "mqtt_broker" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    description = "MCP Agent API"
+    from_port   = 8001
+    to_port     = 8001
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   # All outbound traffic
   egress {
     from_port   = 0
