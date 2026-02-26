@@ -1,8 +1,5 @@
-# MCP SDK
-mcp>=1.26.0
-
-# LLM
-anthropic>=0.45.0
+# LLM (OpenAI-compatible SDK for KodeKloud proxy)
+openai>=1.40.0
 
 # Web framework
 fastapi>=0.115.0
@@ -11,7 +8,7 @@ uvicorn>=0.34.0
 # Data sources
 pymongo>=4.10.0
 redis>=5.2.0
-aiokafka>=0.12.0
+confluent-kafka>=2.3.0
 paho-mqtt>=2.1.0
 
 # Utilities

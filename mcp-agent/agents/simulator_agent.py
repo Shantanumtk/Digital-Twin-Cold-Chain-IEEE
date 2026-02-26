@@ -1,101 +1,127 @@
 """
 Simulator Controller Agent — Controls docker-compose sensor environment
-through natural language commands using Claude API with tool calling.
+through natural language commands using OpenAI-compatible API with tool calling.
 """
 
 import os
 import json
-import anthropic
+from openai import OpenAI
 from tools import simulator_tools
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-MODEL = "claude-sonnet-4-20250514"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.ai.kodekloud.com/v1")
+MODEL = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4.5")
 
 SYSTEM_PROMPT = """You are a Cold Chain Simulation Controller. You can manipulate the sensor
 simulator environment to create test scenarios for the cold chain monitoring system.
 
 You control a docker-compose environment running on an EC2 instance that simulates:
-- Refrigerated trucks with temperature sensors, door sensors, and compressors
-- Cold storage rooms in warehouses with temperature and humidity sensors
+- Refrigerated trucks (truck01, truck02, ... truck12) with temperature, door, compressor, GPS
+- Cold storage rooms (site1/room1, site2/room2, etc.) with temperature, humidity, door, compressor
 
 You can:
-- Open/close truck doors to simulate loading events
+- Open/close doors on trucks or rooms to simulate loading events
 - Trigger compressor failures to simulate equipment breakdowns
-- Simulate power outages at warehouse sites
+- Simulate power outages at warehouse sites (affects all rooms at that site)
 - Scale the fleet (add/remove trucks and cold rooms)
 - Restart the simulator with different configurations
+- Check current simulator status and config
 
-When the user describes a scenario, figure out which tools to call and execute them.
-Confirm what you did and explain what the user should expect to see in the monitoring system.
+When the user describes a scenario:
+1. Figure out which tools to call
+2. Execute them
+3. Confirm what you did
+4. Explain what the user should expect to see in the monitoring dashboard
 
-Be specific about timings, asset IDs, and expected effects."""
+Be specific about timings, asset IDs, and expected temperature effects."""
 
 TOOLS = [
     {
-        "name": "get_simulator_status",
-        "description": "Get current status of the sensor simulator containers",
-        "input_schema": {"type": "object", "properties": {}}
-    },
-    {
-        "name": "get_simulator_env",
-        "description": "Get current simulator configuration (number of trucks, rooms, etc.)",
-        "input_schema": {"type": "object", "properties": {}}
-    },
-    {
-        "name": "trigger_door_event",
-        "description": "Open a truck or room door for a specified duration",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "asset_id": {"type": "string", "description": "Asset ID (e.g. 'truck-02')"},
-                "duration_seconds": {"type": "integer", "description": "How long door stays open (default 60)", "default": 60}
-            },
-            "required": ["asset_id"]
+        "type": "function",
+        "function": {
+            "name": "get_simulator_status",
+            "description": "Get current status of the sensor simulator container (running, stopped, etc.)",
+            "parameters": {"type": "object", "properties": {}}
         }
     },
     {
-        "name": "trigger_compressor_failure",
-        "description": "Simulate compressor failure on an asset",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "asset_id": {"type": "string", "description": "Asset ID (e.g. 'truck-05')"},
-                "duration_seconds": {"type": "integer", "description": "Duration of failure (default 300)", "default": 300}
-            },
-            "required": ["asset_id"]
+        "type": "function",
+        "function": {
+            "name": "get_simulator_env",
+            "description": "Get current simulator configuration — number of trucks, rooms, publish interval, etc.",
+            "parameters": {"type": "object", "properties": {}}
         }
     },
     {
-        "name": "trigger_power_outage",
-        "description": "Simulate power outage at a warehouse site",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "site_id": {"type": "string", "description": "Site ID (default 'site-1')", "default": "site-1"},
-                "duration_seconds": {"type": "integer", "description": "Duration of outage (default 600)", "default": 600}
+        "type": "function",
+        "function": {
+            "name": "trigger_door_event",
+            "description": "Open a truck or room door for a specified duration. This causes temperature to rise rapidly.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "asset_id": {"type": "string", "description": "Asset ID — for trucks use 'truck01', 'truck02', etc. For rooms use 'site1-room1', etc."},
+                    "duration_seconds": {"type": "integer", "description": "How long door stays open in seconds (default 60)"}
+                },
+                "required": ["asset_id"]
             }
         }
     },
     {
-        "name": "scale_fleet",
-        "description": "Change the number of simulated trucks and/or cold rooms",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "num_trucks": {"type": "integer", "description": "New number of trucks"},
-                "num_cold_rooms": {"type": "integer", "description": "New number of cold rooms"}
+        "type": "function",
+        "function": {
+            "name": "trigger_compressor_failure",
+            "description": "Simulate compressor failure on an asset. Temperature will gradually rise without active cooling.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "asset_id": {"type": "string", "description": "Asset ID (e.g. 'truck05', 'site1-room3')"},
+                    "duration_seconds": {"type": "integer", "description": "Duration of failure in seconds (default 300 = 5 min)"}
+                },
+                "required": ["asset_id"]
             }
         }
     },
     {
-        "name": "restart_simulator",
-        "description": "Restart the sensor simulator with optional config changes",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "env_overrides": {
-                    "type": "object",
-                    "description": "Environment variable overrides (e.g. {'PUBLISH_INTERVAL': '0.5'})"
+        "type": "function",
+        "function": {
+            "name": "trigger_power_outage",
+            "description": "Simulate power outage at a warehouse site. All cold rooms at the site lose compressor power.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "site_id": {"type": "string", "description": "Site ID: 'site1', 'site2', or 'site3' (default 'site1')"},
+                    "duration_seconds": {"type": "integer", "description": "Duration of outage in seconds (default 600 = 10 min)"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "scale_fleet",
+            "description": "Change the number of simulated trucks and/or cold rooms. Restarts the simulator.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "num_trucks": {"type": "integer", "description": "New number of trucks"},
+                    "num_cold_rooms": {"type": "integer", "description": "New number of cold rooms"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "restart_simulator",
+            "description": "Restart the sensor simulator with optional config changes (publish interval, counts, etc.)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "env_overrides": {
+                        "type": "object",
+                        "description": "Environment variable overrides, e.g. {'PUBLISH_INTERVAL': '0.5', 'NUM_TRUCKS': '20'}"
+                    }
                 }
             }
         }
@@ -114,54 +140,49 @@ TOOL_HANDLERS = {
 
 
 def process_command(user_message: str, conversation_history: list = None) -> str:
-    """Process a simulation command using Claude with tool calling.
+    """Process a simulation command using OpenAI-compatible API with tool calling."""
+    client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 
-    Args:
-        user_message: The user's simulation command
-        conversation_history: Optional list of previous messages
-
-    Returns:
-        The assistant's response confirming actions taken.
-    """
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
-    messages = conversation_history or []
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if conversation_history:
+        messages.extend(conversation_history)
     messages.append({"role": "user", "content": user_message})
 
     max_iterations = 10
     for _ in range(max_iterations):
-        response = client.messages.create(
+        response = client.chat.completions.create(
             model=MODEL,
-            max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            tools=TOOLS,
             messages=messages,
+            tools=TOOLS,
+            tool_choice="auto",
         )
 
-        if response.stop_reason == "tool_use":
-            messages.append({"role": "assistant", "content": response.content})
+        choice = response.choices[0]
 
-            tool_results = []
-            for block in response.content:
-                if block.type == "tool_use":
-                    handler = TOOL_HANDLERS.get(block.name)
-                    if handler:
-                        try:
-                            result = handler(block.input)
-                        except Exception as e:
-                            result = json.dumps({"error": f"Tool {block.name} failed: {str(e)}"})
-                    else:
-                        result = json.dumps({"error": f"Unknown tool: {block.name}"})
+        if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
+            messages.append(choice.message)
 
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result,
-                    })
+            for tool_call in choice.message.tool_calls:
+                handler = TOOL_HANDLERS.get(tool_call.function.name)
+                try:
+                    tool_args = json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError:
+                    tool_args = {}
 
-            messages.append({"role": "user", "content": tool_results})
+                if handler:
+                    try:
+                        result = handler(tool_args)
+                    except Exception as e:
+                        result = json.dumps({"error": f"Tool {tool_call.function.name} failed: {str(e)}"})
+                else:
+                    result = json.dumps({"error": f"Unknown tool: {tool_call.function.name}"})
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": result,
+                })
         else:
-            text_parts = [block.text for block in response.content if hasattr(block, "text")]
-            return "\n".join(text_parts)
+            return choice.message.content or "No response generated."
 
     return "Simulation command processing exceeded maximum iterations."

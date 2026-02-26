@@ -25,7 +25,6 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Allow requests from dashboard (proxied through Next.js)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -45,26 +44,28 @@ class ChatResponse(BaseModel):
     conversation_id: str | None = None
 
 
-# Simple in-memory conversation store (per session)
+# Simple in-memory conversation store
 conversations: dict[str, list] = {}
 
 
 @app.get("/api/health")
 async def health():
     """Health check endpoint."""
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    api_key = os.getenv("OPENAI_API_KEY", "")
     return {
         "status": "healthy",
         "service": "mcp-agent",
-        "anthropic_key_set": bool(api_key and api_key.startswith("sk-")),
+        "api_key_set": bool(api_key),
+        "base_url": os.getenv("OPENAI_BASE_URL", "not set"),
+        "model": os.getenv("LLM_MODEL", "not set"),
     }
 
 
 @app.post("/api/chat/query", response_model=ChatResponse)
 async def chat_query(request: ChatRequest):
     """Query agent — ask questions about cold chain data."""
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
 
     conv_id = request.conversation_id or "default"
     history = conversations.get(conv_id, [])
@@ -74,10 +75,9 @@ async def chat_query(request: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query agent error: {str(e)}")
 
-    # Save to conversation history
     history.append({"role": "user", "content": request.message})
     history.append({"role": "assistant", "content": response_text})
-    conversations[conv_id] = history[-20:]  # Keep last 10 exchanges
+    conversations[conv_id] = history[-20:]
 
     return ChatResponse(response=response_text, conversation_id=conv_id)
 
@@ -85,8 +85,8 @@ async def chat_query(request: ChatRequest):
 @app.post("/api/chat/simulate", response_model=ChatResponse)
 async def chat_simulate(request: ChatRequest):
     """Simulation controller — manipulate the sensor simulator."""
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
 
     conv_id = request.conversation_id or "default-sim"
     history = conversations.get(conv_id, [])

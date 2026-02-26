@@ -1,22 +1,23 @@
 """
 Query Agent — Answers natural language questions about cold chain data.
-Uses Claude API with tool calling to query MongoDB, Redis, Kafka, and MQTT.
+Uses OpenAI-compatible API (KodeKloud proxy to Claude) with tool calling.
 """
 
 import os
 import json
-import anthropic
+from openai import OpenAI
 from tools import mongo_tools, redis_tools, kafka_tools, mqtt_tools
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-MODEL = "claude-sonnet-4-20250514"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.ai.kodekloud.com/v1")
+MODEL = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4.5")
 
 SYSTEM_PROMPT = """You are a Cold Chain Digital Twin AI assistant. You help logistics operators 
 monitor and analyze their refrigerated fleet (trucks and cold storage rooms).
 
 You have access to real-time and historical data through these tools:
-- MongoDB: Historical telemetry, digital twin states, SLA metrics, breach events
-- Redis: Real-time live state of all assets
+- MongoDB: Historical telemetry, alerts, asset state
+- Redis: Real-time live state of all assets, active alerts
 - Kafka: Recent streaming events and alerts
 - MQTT: Live sensor readings directly from devices
 
@@ -26,213 +27,219 @@ When answering questions:
 3. Then query history (MongoDB) for trends and root cause analysis
 4. Correlate findings across sources to give a comprehensive answer
 
-Always provide specific data points (temperatures, timestamps, SLA percentages).
+Always provide specific data points (temperatures, timestamps, asset IDs).
 If you detect anomalies, explain the likely cause based on correlated events.
 Be concise but thorough. Use the data — don't speculate without evidence."""
 
-# Tool definitions for Claude API
 TOOLS = [
     {
-        "name": "get_live_state",
-        "description": "Get real-time state of an asset from Redis (temperature, door status, compressor, etc.)",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "asset_id": {"type": "string", "description": "Asset ID like 'truck-01' or 'cold-room-site-1-room-1'"}
-            },
-            "required": ["asset_id"]
-        }
-    },
-    {
-        "name": "get_all_live_states",
-        "description": "Get real-time state for ALL assets from Redis",
-        "input_schema": {"type": "object", "properties": {}}
-    },
-    {
-        "name": "get_live_reading",
-        "description": "Get the latest MQTT sensor reading directly from the device",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "asset_id": {"type": "string", "description": "Asset ID"}
-            },
-            "required": ["asset_id"]
-        }
-    },
-    {
-        "name": "list_active_sensors",
-        "description": "List all sensors currently publishing MQTT data",
-        "input_schema": {"type": "object", "properties": {}}
-    },
-    {
-        "name": "query_telemetry",
-        "description": "Query historical telemetry readings from MongoDB",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "asset_id": {"type": "string", "description": "Asset ID"},
-                "hours": {"type": "integer", "description": "Hours of history (default 2)", "default": 2},
-                "limit": {"type": "integer", "description": "Max results (default 50)", "default": 50}
-            },
-            "required": ["asset_id"]
-        }
-    },
-    {
-        "name": "get_twin_state",
-        "description": "Get the digital twin state including SLA metrics from MongoDB",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "asset_id": {"type": "string", "description": "Asset ID"}
-            },
-            "required": ["asset_id"]
-        }
-    },
-    {
-        "name": "get_sla_metrics",
-        "description": "Get SLA compliance metrics — time-in-band %, breach count, compliance score",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "asset_id": {"type": "string", "description": "Asset ID"}
-            },
-            "required": ["asset_id"]
-        }
-    },
-    {
-        "name": "find_breaches",
-        "description": "Find temperature breach events from MongoDB",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "asset_id": {"type": "string", "description": "Optional asset ID filter"},
-                "hours": {"type": "integer", "description": "Hours to look back (default 24)", "default": 24},
-                "limit": {"type": "integer", "description": "Max results (default 20)", "default": 20}
+        "type": "function",
+        "function": {
+            "name": "get_live_state",
+            "description": "Get real-time state of an asset from Redis (temperature, door status, compressor, state, reasons, etc.)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "asset_id": {"type": "string", "description": "Asset ID like 'truck-01' or 'sensor-room-site1-room1'"}
+                },
+                "required": ["asset_id"]
             }
         }
     },
     {
-        "name": "compare_assets",
-        "description": "Compare digital twin states across multiple assets",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "asset_ids": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of asset IDs to compare. If empty, compares all."
+        "type": "function",
+        "function": {
+            "name": "get_all_live_states",
+            "description": "Get real-time state for ALL assets from Redis. Returns temperature, door, compressor, state for every asset.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_live_reading",
+            "description": "Get the latest MQTT sensor reading directly from the device (bypasses Redis/MongoDB)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "asset_id": {"type": "string", "description": "Asset ID"}
+                },
+                "required": ["asset_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_active_sensors",
+            "description": "List all sensors currently publishing MQTT data with their last update time",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_telemetry",
+            "description": "Query historical telemetry readings from MongoDB for an asset",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "asset_id": {"type": "string", "description": "Asset ID (truck_id like 'truck01' or sensor_id like 'sensor-room-site1-room1')"},
+                    "hours": {"type": "integer", "description": "Hours of history to look back (default 2)"},
+                    "limit": {"type": "integer", "description": "Max results to return (default 50)"}
+                },
+                "required": ["asset_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_asset_state_from_mongo",
+            "description": "Get the current digital twin state for an asset from MongoDB (includes message count, last updated)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "asset_id": {"type": "string", "description": "Asset ID"}
+                },
+                "required": ["asset_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_breaches",
+            "description": "Find temperature breach alerts from MongoDB. Returns alerts with anomaly details.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "asset_id": {"type": "string", "description": "Optional asset ID filter. Omit to get all breaches."},
+                    "hours": {"type": "integer", "description": "Hours to look back (default 24)"},
+                    "limit": {"type": "integer", "description": "Max results (default 20)"}
                 }
             }
         }
     },
     {
-        "name": "list_all_assets",
-        "description": "List all known assets in the digital twin system",
-        "input_schema": {"type": "object", "properties": {}}
-    },
-    {
-        "name": "read_recent_events",
-        "description": "Read recent events from Kafka topics",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "topic_key": {
-                    "type": "string",
-                    "description": "One of: 'trucks', 'rooms', 'alerts'",
-                    "enum": ["trucks", "rooms", "alerts"]
-                },
-                "count": {"type": "integer", "description": "Number of messages (default 10)", "default": 10}
-            },
-            "required": ["topic_key"]
+        "type": "function",
+        "function": {
+            "name": "compare_assets",
+            "description": "Compare current state across multiple assets side-by-side from Redis",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "asset_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of asset IDs to compare. If empty, compares all."
+                    }
+                }
+            }
         }
     },
     {
-        "name": "get_alerts_from_redis",
-        "description": "Get recent alerts from Redis for an asset or all assets",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "asset_id": {"type": "string", "description": "Optional asset ID filter"}
+        "type": "function",
+        "function": {
+            "name": "list_all_assets",
+            "description": "List all known assets with their current state (NORMAL/WARNING/CRITICAL) and type",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_recent_events",
+            "description": "Read recent events from Kafka topics (trucks telemetry, rooms telemetry, or alerts)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "topic_key": {
+                        "type": "string",
+                        "description": "One of: 'trucks', 'rooms', 'alerts'",
+                        "enum": ["trucks", "rooms", "alerts"]
+                    },
+                    "count": {"type": "integer", "description": "Number of recent messages to read (default 10)"}
+                },
+                "required": ["topic_key"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_active_alerts",
+            "description": "Get all currently active alerts from Redis (assets in WARNING or CRITICAL state)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "asset_id": {"type": "string", "description": "Optional asset ID to filter alerts for a specific asset"}
+                }
             }
         }
     },
 ]
 
-# Map tool names to functions
 TOOL_HANDLERS = {
     "get_live_state": lambda args: redis_tools.get_live_state(**args),
     "get_all_live_states": lambda args: redis_tools.get_all_live_states(),
     "get_live_reading": lambda args: mqtt_tools.get_live_reading(**args),
     "list_active_sensors": lambda args: mqtt_tools.list_active_sensors(),
     "query_telemetry": lambda args: mongo_tools.query_telemetry(**args),
-    "get_twin_state": lambda args: mongo_tools.get_twin_state(**args),
-    "get_sla_metrics": lambda args: mongo_tools.get_sla_metrics(**args),
+    "get_asset_state_from_mongo": lambda args: mongo_tools.get_asset_state(**args),
     "find_breaches": lambda args: mongo_tools.find_breaches(**args),
-    "compare_assets": lambda args: mongo_tools.compare_assets(**args),
-    "list_all_assets": lambda args: mongo_tools.list_all_assets(),
+    "compare_assets": lambda args: redis_tools.compare_assets(**args),
+    "list_all_assets": lambda args: redis_tools.list_all_assets(),
     "read_recent_events": lambda args: kafka_tools.read_recent_events(**args),
-    "get_alerts_from_redis": lambda args: redis_tools.get_alerts_from_redis(**args),
+    "get_active_alerts": lambda args: redis_tools.get_active_alerts(**args),
 }
 
 
 def process_query(user_message: str, conversation_history: list = None) -> str:
-    """Process a natural language query using Claude with tool calling.
+    """Process a natural language query using OpenAI-compatible API with tool calling."""
+    client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 
-    Args:
-        user_message: The user's question
-        conversation_history: Optional list of previous messages
-
-    Returns:
-        The assistant's final text response.
-    """
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
-    messages = conversation_history or []
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if conversation_history:
+        messages.extend(conversation_history)
     messages.append({"role": "user", "content": user_message})
 
-    # Agentic loop: keep calling tools until Claude gives a text response
     max_iterations = 10
     for _ in range(max_iterations):
-        response = client.messages.create(
+        response = client.chat.completions.create(
             model=MODEL,
-            max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            tools=TOOLS,
             messages=messages,
+            tools=TOOLS,
+            tool_choice="auto",
         )
 
-        # Check if Claude wants to use tools
-        if response.stop_reason == "tool_use":
-            # Add assistant message with tool use blocks
-            messages.append({"role": "assistant", "content": response.content})
+        choice = response.choices[0]
 
-            # Process each tool call
-            tool_results = []
-            for block in response.content:
-                if block.type == "tool_use":
-                    tool_name = block.name
-                    tool_input = block.input
+        if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
+            messages.append(choice.message)
 
-                    handler = TOOL_HANDLERS.get(tool_name)
-                    if handler:
-                        try:
-                            result = handler(tool_input)
-                        except Exception as e:
-                            result = json.dumps({"error": f"Tool {tool_name} failed: {str(e)}"})
-                    else:
-                        result = json.dumps({"error": f"Unknown tool: {tool_name}"})
+            for tool_call in choice.message.tool_calls:
+                tool_name = tool_call.function.name
+                try:
+                    tool_args = json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError:
+                    tool_args = {}
 
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result,
-                    })
+                handler = TOOL_HANDLERS.get(tool_name)
+                if handler:
+                    try:
+                        result = handler(tool_args)
+                    except Exception as e:
+                        result = json.dumps({"error": f"Tool {tool_name} failed: {str(e)}"})
+                else:
+                    result = json.dumps({"error": f"Unknown tool: {tool_name}"})
 
-            messages.append({"role": "user", "content": tool_results})
-
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": result,
+                })
         else:
-            # Claude gave a final text response
-            text_parts = [block.text for block in response.content if hasattr(block, "text")]
-            return "\n".join(text_parts)
+            return choice.message.content or "No response generated."
 
-    return "I wasn't able to fully answer your question within the allowed number of tool calls. Please try a more specific question."
+    return "Query processing exceeded maximum iterations. Please try a more specific question."

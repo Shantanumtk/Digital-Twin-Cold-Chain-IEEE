@@ -1,6 +1,11 @@
 """
-MongoDB MCP Tools — Historical telemetry + Digital Twin state queries.
+MongoDB MCP Tools — Historical telemetry and alert queries.
 Connects to MongoDB on the private EC2 instance within the VPC.
+
+Collections used:
+  telemetry — raw sensor readings (written by kafka_consumer)
+  assets    — digital twin state (written by kafka_consumer)
+  alerts    — alert events (written by kafka_consumer)
 """
 
 import os
@@ -18,7 +23,7 @@ _db = None
 def get_db():
     global _client, _db
     if _db is None:
-        _client = MongoClient(MONGO_URI)
+        _client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         _db = _client[MONGO_DB]
     return _db
 
@@ -27,7 +32,7 @@ def query_telemetry(asset_id: str, hours: int = 2, limit: int = 50) -> str:
     """Query historical telemetry readings for an asset.
 
     Args:
-        asset_id: The asset identifier (e.g. 'truck-01', 'cold-room-site-1-room-1')
+        asset_id: The asset identifier (e.g. 'truck01', 'sensor-room-site1-room1')
         hours: How many hours of history to look back (default 2)
         limit: Maximum number of readings to return (default 50)
 
@@ -37,15 +42,26 @@ def query_telemetry(asset_id: str, hours: int = 2, limit: int = 50) -> str:
     db = get_db()
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
 
+    # The ingestion consumer stores truck_id or sensor_id depending on asset type
+    query = {
+        "$or": [
+            {"truck_id": asset_id},
+            {"sensor_id": asset_id},
+            {"truck_id": {"$regex": asset_id, "$options": "i"}},
+            {"sensor_id": {"$regex": asset_id, "$options": "i"}},
+        ],
+        "created_at": {"$gte": since}
+    }
+
     cursor = db.telemetry.find(
-        {"asset_id": asset_id, "timestamp": {"$gte": since}},
-        {"_id": 0}
-    ).sort("timestamp", -1).limit(limit)
+        query, {"_id": 0}
+    ).sort("created_at", -1).limit(limit)
 
     results = []
     for doc in cursor:
-        if "timestamp" in doc and isinstance(doc["timestamp"], datetime):
-            doc["timestamp"] = doc["timestamp"].isoformat()
+        for key in ["created_at", "timestamp"]:
+            if key in doc and isinstance(doc[key], datetime):
+                doc[key] = doc[key].isoformat()
         results.append(doc)
 
     if not results:
@@ -54,142 +70,67 @@ def query_telemetry(asset_id: str, hours: int = 2, limit: int = 50) -> str:
     return json.dumps(results, default=str)
 
 
-def get_twin_state(asset_id: str) -> str:
-    """Get the current digital twin state for an asset from the twin_states collection.
-
-    Args:
-        asset_id: The asset identifier (e.g. 'truck-01')
-
-    Returns:
-        JSON string with the current twin state including SLA metrics.
-    """
-    db = get_db()
-    state = db.twin_states.find_one(
-        {"asset_id": asset_id},
-        {"_id": 0}
-    )
-
-    if not state:
-        return json.dumps({"message": f"No twin state found for {asset_id}"})
-
-    if "last_updated" in state and isinstance(state["last_updated"], datetime):
-        state["last_updated"] = state["last_updated"].isoformat()
-
-    return json.dumps(state, default=str)
-
-
-def get_sla_metrics(asset_id: str) -> str:
-    """Get SLA compliance metrics for an asset — time-in-band percentage,
-    breach count, and compliance score.
+def get_asset_state(asset_id: str) -> str:
+    """Get the current digital twin state for an asset from MongoDB assets collection.
 
     Args:
         asset_id: The asset identifier
 
     Returns:
-        JSON string with SLA metrics.
+        JSON string with the current state from MongoDB.
     """
     db = get_db()
-    state = db.twin_states.find_one(
-        {"asset_id": asset_id},
-        {"_id": 0, "asset_id": 1, "sla": 1, "breach_count": 1,
-         "time_in_band_pct": 1, "compliance_score": 1, "state": 1}
-    )
+
+    # The ingestion consumer uses asset_id as _id in the assets collection
+    state = db.assets.find_one({"_id": asset_id})
 
     if not state:
-        return json.dumps({"message": f"No SLA metrics found for {asset_id}"})
+        # Try regex match
+        state = db.assets.find_one({"_id": {"$regex": asset_id, "$options": "i"}})
+
+    if not state:
+        return json.dumps({"message": f"No asset state found for {asset_id}"})
+
+    # Convert _id and datetime fields
+    state["asset_id"] = state.pop("_id", asset_id)
+    for key in ["last_updated"]:
+        if key in state and isinstance(state[key], datetime):
+            state[key] = state[key].isoformat()
 
     return json.dumps(state, default=str)
 
 
 def find_breaches(asset_id: str = None, hours: int = 24, limit: int = 20) -> str:
-    """Find temperature breach events.
+    """Find temperature breach/alert events from MongoDB.
 
     Args:
-        asset_id: Optional — filter by specific asset. If None, returns all breaches.
+        asset_id: Optional — filter by specific asset.
         hours: How many hours to look back (default 24)
         limit: Maximum results (default 20)
 
     Returns:
-        JSON string with breach events.
+        JSON string with breach/alert events.
     """
     db = get_db()
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
 
-    query = {"timestamp": {"$gte": since}, "event_type": {"$regex": "breach|BREACH|alert|ALERT", "$options": "i"}}
+    # Alerts are stored by the kafka_consumer with created_at timestamp
+    # and have anomaly.type field (e.g. TEMP_BREACH, DOOR_OPEN)
+    query = {"created_at": {"$gte": since}}
     if asset_id:
-        query["asset_id"] = asset_id
+        query["asset_id"] = {"$regex": asset_id, "$options": "i"}
 
-    cursor = db.alerts.find(query, {"_id": 0}).sort("timestamp", -1).limit(limit)
+    cursor = db.alerts.find(query, {"_id": 0}).sort("created_at", -1).limit(limit)
 
     results = []
     for doc in cursor:
-        if "timestamp" in doc and isinstance(doc["timestamp"], datetime):
-            doc["timestamp"] = doc["timestamp"].isoformat()
+        for key in ["created_at", "detected_at"]:
+            if key in doc and isinstance(doc[key], datetime):
+                doc[key] = doc[key].isoformat()
         results.append(doc)
-
-    if not results:
-        # Fallback: check telemetry for temperature values outside bounds
-        temp_query = {"timestamp": {"$gte": since}}
-        if asset_id:
-            temp_query["asset_id"] = asset_id
-        temp_query["$or"] = [
-            {"temperature": {"$gt": -2}},  # Above upper threshold
-            {"temperature": {"$lt": -25}}  # Below lower threshold
-        ]
-        cursor = db.telemetry.find(temp_query, {"_id": 0}).sort("timestamp", -1).limit(limit)
-        results = []
-        for doc in cursor:
-            if "timestamp" in doc and isinstance(doc["timestamp"], datetime):
-                doc["timestamp"] = doc["timestamp"].isoformat()
-            results.append(doc)
 
     if not results:
         scope = f"for {asset_id}" if asset_id else "across all assets"
-        return json.dumps({"message": f"No breaches found {scope} in last {hours}h"})
-
-    return json.dumps(results, default=str)
-
-
-def compare_assets(asset_ids: list[str] = None) -> str:
-    """Compare digital twin states across multiple assets side-by-side.
-
-    Args:
-        asset_ids: Optional list of asset IDs. If None, returns all assets.
-
-    Returns:
-        JSON string with comparison data.
-    """
-    db = get_db()
-
-    query = {}
-    if asset_ids:
-        query["asset_id"] = {"$in": asset_ids}
-
-    cursor = db.twin_states.find(query, {"_id": 0}).sort("asset_id", 1)
-
-    results = []
-    for doc in cursor:
-        if "last_updated" in doc and isinstance(doc["last_updated"], datetime):
-            doc["last_updated"] = doc["last_updated"].isoformat()
-        results.append(doc)
-
-    if not results:
-        return json.dumps({"message": "No twin states found"})
-
-    return json.dumps(results, default=str)
-
-
-def list_all_assets() -> str:
-    """List all known assets in the digital twin system.
-
-    Returns:
-        JSON string with list of asset IDs and their current states.
-    """
-    db = get_db()
-    cursor = db.twin_states.find({}, {"_id": 0, "asset_id": 1, "state": 1, "asset_type": 1}).sort("asset_id", 1)
-
-    results = list(cursor)
-    if not results:
-        return json.dumps({"message": "No assets found in the system"})
+        return json.dumps({"message": f"No alerts/breaches found {scope} in last {hours}h"})
 
     return json.dumps(results, default=str)
