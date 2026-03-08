@@ -699,8 +699,8 @@ YAML
   ENV_FILE=$(mktemp)
   cat > "$ENV_FILE" << ENVGEN
 OPENAI_API_KEY=${ANTHROPIC_KEY}
-OPENAI_BASE_URL=https://api.ai.kodekloud.com/v1
-LLM_MODEL=anthropic/claude-sonnet-4.5
+OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+LLM_MODEL=gemini-2.0-flash
 MONGO_URI=mongodb://${MONGODB_PRIVATE_IP}:27017
 MONGO_DB=coldchain
 REDIS_HOST=${EKS_NODE_IP}
