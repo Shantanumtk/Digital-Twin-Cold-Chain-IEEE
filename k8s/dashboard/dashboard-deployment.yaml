@@ -28,6 +28,13 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "300m"
+          env:
+            - name: AUTH_MONGO_URI
+              value: "mongodb://MONGODB_PRIVATE_IP:27017"
+            - name: NEXTAUTH_SECRET
+              value: "coldchain-digital-twin-secret-2026"
+            - name: NEXTAUTH_URL
+              value: "http://localhost:3000"
           readinessProbe:
             httpGet:
               path: /

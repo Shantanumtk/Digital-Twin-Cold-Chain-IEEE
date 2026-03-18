@@ -43,6 +43,22 @@ resource "aws_security_group" "eks_nodes" {
     description     = "MQTT broker to Kafka"
   }
 
+  ingress {
+    from_port       = 30379
+    to_port         = 30379
+    protocol        = "tcp"
+    security_groups = [aws_security_group.mqtt_broker.id]
+    description     = "MCP Agent to Redis NodePort"
+}
+
+ingress {
+    from_port       = 30092
+    to_port         = 30092
+    protocol        = "tcp"
+    security_groups = [aws_security_group.mqtt_broker.id]
+    description     = "MCP Agent to Kafka NodePort"
+}
+
   egress {
     from_port   = 0
     to_port     = 0

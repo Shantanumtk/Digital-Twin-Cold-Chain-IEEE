@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Snowflake, RefreshCw, Menu, X, LayoutGrid, Map, Bell, Settings, BarChart3, MessageCircle, Gamepad2 } from 'lucide-react';
+import { signOut } from 'next-auth/react';
+import { Snowflake, RefreshCw, Menu, X, LayoutGrid, Map, Bell, Settings, BarChart3, MessageCircle, Gamepad2, LogOut } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface HeaderProps {
@@ -69,6 +70,15 @@ export default function Header({ lastUpdated, activeView = 'dashboard', onViewCh
               <RefreshCw className="w-4 h-4" />
               {lastUpdated ? <span>{format(lastUpdated, 'HH:mm:ss')}</span> : <span>Loading...</span>}
             </div>
+
+            <button
+              onClick={() => signOut({ callbackUrl: "/login" })}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              title="Sign out"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="hidden sm:inline">Logout</span>
+            </button>
 
             <button
               className="lg:hidden p-2 rounded-lg hover:bg-gray-100 relative"

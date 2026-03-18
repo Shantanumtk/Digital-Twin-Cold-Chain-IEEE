@@ -534,6 +534,8 @@ deploy_dashboard() {
   docker build --platform linux/amd64 \
     --build-arg NEXT_PUBLIC_API_URL="http://${STATE_ENGINE_URL}" \
     --build-arg MCP_AGENT_URL="http://${MQTT_BROKER_PRIVATE_IP}:8001" \
+    --build-arg AUTH_MONGO_URI="mongodb://${MONGODB_PRIVATE_IP}:27017" \
+    --build-arg NEXTAUTH_SECRET="coldchain-digital-twin-secret-2026" \
     -t dashboard:latest dashboard/
   docker tag dashboard:latest "${repo}:latest"
   docker push "${repo}:latest"
@@ -551,6 +553,12 @@ deploy_dashboard() {
       MCP_AGENT_URL="http://${MQTT_BROKER_PRIVATE_IP}:8001"
     log_done "MCP Agent URL set to http://${MQTT_BROKER_PRIVATE_IP}:8001"
   fi
+
+  # Set auth env vars
+  kubectl set env deployment/dashboard -n "$NAMESPACE" \
+    AUTH_MONGO_URI="mongodb://${MONGODB_PRIVATE_IP}:27017" \
+    NEXTAUTH_SECRET="coldchain-digital-twin-secret-2026" \
+    NEXTAUTH_URL="http://${DASH_URL:-localhost:3000}"
 
   log_info "Waiting for dashboard pods..."
   kubectl rollout status deployment dashboard -n "$NAMESPACE" --timeout=180s
