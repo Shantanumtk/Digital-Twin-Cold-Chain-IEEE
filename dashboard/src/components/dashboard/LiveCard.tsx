@@ -63,12 +63,12 @@ export default function LiveCard({ asset: a, onClick }: Props) {
       }}>
         {[
           { l: "Temp", v: `${a.temperature_c?.toFixed(1)}°C`, c: col },
-          { l: "Humidity", v: `${(a.humidity ?? a.humidity_pct ?? 50)}%`, c: ((a.humidity ?? a.humidity_pct ?? 50)) > 70 ? theme.warning : theme.cyan },
+          { l: "Humidity", v: `${(a.humidity ?? 50)}%`, c: ((a.humidity ?? 50)) > 70 ? theme.warning : theme.cyan },
           { l: "Door", v: a.door_open ? "Open" : "Closed", c: a.door_open ? theme.warning : theme.accent },
           {
             l: isTruck ? "Speed" : "Power",
-            v: isTruck ? `${(a.speed ?? a.location?.speed_kmh ?? 0)} km/h` : (a.compressor_running ? `${a.power || 4.2} kW` : "0 kW"),
-            c: isTruck ? (((a.speed ?? a.location?.speed_kmh ?? 0)) > 0 ? theme.blue : theme.dim) : (a.compressor_running ? theme.accent : theme.critical),
+            v: isTruck ? `${(a.speed ?? 0)} km/h` : (a.compressor_running ? `${a.power || 4.2} kW` : "0 kW"),
+            c: isTruck ? (((a.speed ?? 0)) > 0 ? theme.blue : theme.dim) : (a.compressor_running ? theme.accent : theme.critical),
           },
         ].map(m => (
           <div key={m.l} style={{ textAlign: "center" }}>
