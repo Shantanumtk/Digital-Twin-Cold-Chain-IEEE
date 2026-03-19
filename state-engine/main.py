@@ -340,6 +340,194 @@ async def reload_active_profile():
     profile = reload_profile()
     return {"message": "Profile reloaded", "name": profile.get("name", "unknown")}
 
+
+# =============================================================================
+# Asset History / Detail Endpoints  (for Dashboard Asset Detail Modal)
+# =============================================================================
+
+@app.get("/assets/{asset_id}/telemetry")
+async def get_asset_telemetry(
+    asset_id: str,
+    hours: int = Query(default=24, ge=1, le=168),
+    limit: int = Query(default=500, ge=10, le=2000),
+):
+    """
+    Temperature + humidity timeseries for an asset.
+    Returns list sorted oldest→newest for chart rendering.
+    Source: MongoDB telemetry collection.
+    """
+    try:
+        docs = await mongo_client.get_telemetry_history(asset_id, hours=hours, limit=limit)
+        return {"asset_id": asset_id, "hours": hours, "count": len(docs), "data": docs}
+    except Exception as e:
+        logger.error(f"telemetry history error for {asset_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/assets/{asset_id}/door-activity")
+async def get_door_activity(
+    asset_id: str,
+    hours: int = Query(default=24, ge=1, le=168),
+):
+    """
+    Door open/close event timeline.
+    Returns events with timestamp, event_type (open/close), duration_seconds.
+    Source: MongoDB telemetry — derived from door_open field transitions.
+    """
+    try:
+        events = await mongo_client.get_door_events(asset_id, hours=hours)
+        total_open_seconds = sum(e.get("duration_seconds", 0) for e in events if e.get("event_type") == "close")
+        return {
+            "asset_id": asset_id,
+            "hours": hours,
+            "total_open_seconds": total_open_seconds,
+            "open_count": sum(1 for e in events if e.get("event_type") == "open"),
+            "events": events,
+        }
+    except Exception as e:
+        logger.error(f"door-activity error for {asset_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/assets/{asset_id}/compressor-activity")
+async def get_compressor_activity(
+    asset_id: str,
+    hours: int = Query(default=24, ge=1, le=168),
+):
+    """
+    Compressor on/off event timeline.
+    Returns events + runtime percentage over the window.
+    Source: MongoDB telemetry — derived from compressor_on field transitions.
+    """
+    try:
+        events = await mongo_client.get_compressor_events(asset_id, hours=hours)
+        on_seconds = sum(e.get("duration_seconds", 0) for e in events if e.get("event_type") == "off")
+        window_seconds = hours * 3600
+        runtime_pct = round((on_seconds / window_seconds) * 100, 1) if window_seconds > 0 else 0
+        return {
+            "asset_id": asset_id,
+            "hours": hours,
+            "runtime_percent": runtime_pct,
+            "cycle_count": sum(1 for e in events if e.get("event_type") == "on"),
+            "events": events,
+        }
+    except Exception as e:
+        logger.error(f"compressor-activity error for {asset_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/assets/{asset_id}/location-history")
+async def get_location_history(
+    asset_id: str,
+    hours: int = Query(default=4, ge=1, le=48),
+    limit: int = Query(default=200, ge=10, le=1000),
+):
+    """
+    GPS route trail for trucks (lat/lng + timestamp + speed).
+    Returns empty list for cold-room assets.
+    Source: MongoDB telemetry.
+    """
+    try:
+        points = await mongo_client.get_location_history(asset_id, hours=hours, limit=limit)
+        return {"asset_id": asset_id, "hours": hours, "count": len(points), "route": points}
+    except Exception as e:
+        logger.error(f"location-history error for {asset_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/assets/{asset_id}/alert-history")
+async def get_asset_alert_history(
+    asset_id: str,
+    hours: int = Query(default=24, ge=1, le=168),
+):
+    """
+    Alert timeline for a single asset — severity breakdown + full list.
+    Source: MongoDB alerts collection.
+    """
+    try:
+        alerts = await mongo_client.get_asset_alerts(asset_id, hours=hours)
+        severity_counts: dict = {}
+        for a in alerts:
+            sev = a.get("severity", "UNKNOWN")
+            severity_counts[sev] = severity_counts.get(sev, 0) + 1
+        return {
+            "asset_id": asset_id,
+            "hours": hours,
+            "total": len(alerts),
+            "severity_breakdown": severity_counts,
+            "alerts": alerts,
+        }
+    except Exception as e:
+        logger.error(f"alert-history error for {asset_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/assets/{asset_id}/config")
+async def get_asset_config(asset_id: str):
+    """
+    Asset threshold configuration + profile name.
+    Reads from Redis live state (which was populated by profile_loader at startup).
+    Falls back to profile_loader summary if Redis key missing.
+    """
+    try:
+        state = await redis_client.get_asset_state(asset_id)
+        if not state:
+            raise HTTPException(status_code=404, detail=f"Asset {asset_id} not found")
+        profile = get_profile_summary()
+        asset_type = state.get("asset_type", "truck")
+        thresholds = profile.get("thresholds", {}).get(asset_type, {})
+        return {
+            "asset_id": asset_id,
+            "asset_type": asset_type,
+            "profile_name": profile.get("name", "default"),
+            "thresholds": thresholds,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"config error for {asset_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/assets/{asset_id}/summary")
+async def get_asset_summary(
+    asset_id: str,
+    hours: int = Query(default=24, ge=1, le=168),
+):
+    """
+    Aggregated summary for the modal header card:
+    current state, temp stats (min/max/avg over window), uptime %, alert count.
+    Source: Redis (current) + MongoDB (history aggregation).
+    """
+    try:
+        state = await redis_client.get_asset_state(asset_id)
+        if not state:
+            raise HTTPException(status_code=404, detail=f"Asset {asset_id} not found")
+        telemetry = await mongo_client.get_telemetry_history(asset_id, hours=hours, limit=2000)
+        temps = [t["temperature"] for t in telemetry if t.get("temperature") is not None]
+        alert_docs = await mongo_client.get_asset_alerts(asset_id, hours=hours)
+        return {
+            "asset_id": asset_id,
+            "current_state": state.get("state", "UNKNOWN"),
+            "current_temperature": state.get("temperature"),
+            "current_humidity": state.get("humidity"),
+            "door_open": state.get("door_open", False),
+            "compressor_on": state.get("compressor_on", True),
+            "temperature_stats": {
+                "min": round(min(temps), 2) if temps else None,
+                "max": round(max(temps), 2) if temps else None,
+                "avg": round(sum(temps) / len(temps), 2) if temps else None,
+                "samples": len(temps),
+            },
+            "alert_count_24h": len(alert_docs),
+            "last_updated": state.get("last_updated"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"summary error for {asset_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -11,7 +11,6 @@ import FleetPage from "@/components/dashboard/pages/FleetPage";
 import RoomsPage from "@/components/dashboard/pages/RoomsPage";
 import MapPage from "@/components/dashboard/pages/MapPage";
 import AlertsPage from "@/components/dashboard/pages/AlertsPage";
-import AnalyticsPage from "@/components/dashboard/pages/AnalyticsPage";
 import SettingsPage from "@/components/dashboard/pages/SettingsPage";
 import FloatingChat from "@/components/dashboard/FloatingChat";
 import DetailModal from "@/components/dashboard/DetailModal";
@@ -117,8 +116,6 @@ export default function HomePage() {
         return <MapPage assets={assets} trucks={trucks} />;
       case "alerts":
         return <AlertsPage subNav={subNav} alerts={alerts} />;
-      case "analytics":
-        return <AnalyticsPage subNav={subNav} assets={assets} trucks={trucks} rooms={rooms} stats={stats} />;
       case "settings":
         return <SettingsPage subNav={subNav} />;
       default:

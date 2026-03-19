@@ -36,7 +36,8 @@ export interface StatsData {
   active_alerts: number;
 }
 
-export type PageKey = "dashboard" | "monitor" | "fleet" | "rooms" | "map" | "alerts" | "analytics" | "settings";
+export type PageKey = "dashboard" | "monitor" | "fleet" | "rooms" | "map" | "alerts" | "settings";
+
 
 export interface SidebarItem {
   icon: string;
@@ -52,9 +53,9 @@ export const SIDEBAR_ITEMS: SidebarItem[] = [
   { icon: "🏭", label: "Cold Rooms", key: "rooms" },
   { icon: "🗺", label: "Live Map", key: "map" },
   { icon: "⚠", label: "Alerts", key: "alerts", badge: true },
-  { icon: "📊", label: "Analytics", key: "analytics" },
   { icon: "⚙", label: "Settings", key: "settings" },
 ];
+
 
 export const SUB_NAV_MAP: Record<PageKey, string[]> = {
   dashboard: ["Overview", "Fleet Summary", "Room Summary", "System Health"],
@@ -63,6 +64,5 @@ export const SUB_NAV_MAP: Record<PageKey, string[]> = {
   rooms: ["All Rooms", "Site Overview", "Temp Map", "Compliance"],
   map: ["Live Tracking", "Route History", "Geofences", "Heatmap"],
   alerts: ["Active", "History", "Rules", "Escalations"],
-  analytics: ["Temp Trends", "Fleet Efficiency", "SLA Compliance", "Reports"],
   settings: ["General", "Profiles", "Notifications", "Users"],
 };
