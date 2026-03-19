@@ -158,3 +158,126 @@ def scale_fleet(num_trucks: int = None, num_cold_rooms: int = None) -> str:
         return json.dumps({"error": "Specify num_trucks and/or num_cold_rooms"})
 
     return restart_simulator(env_overrides=env)
+
+# =============================================================================
+# Profile Management Tools
+# =============================================================================
+
+import yaml as _yaml_module
+
+PROFILES_DIR = os.getenv("PROFILES_DIR", "/home/ubuntu/CPSC-597-Digital-Twin-Cold-Chain/profiles")
+ACTIVE_PROFILE = os.path.join(PROFILES_DIR, "active.yaml")
+
+
+def get_active_profile() -> str:
+    """Get the currently active profile configuration."""
+    try:
+        if not os.path.exists(ACTIVE_PROFILE):
+            return json.dumps({"error": f"No active profile found at {ACTIVE_PROFILE}"})
+        with open(ACTIVE_PROFILE) as f:
+            profile = _yaml_module.safe_load(f)
+        return json.dumps(profile, default=str)
+    except Exception as e:
+        return json.dumps({"error": f"Failed to read profile: {str(e)}"})
+
+
+def list_profiles() -> str:
+    """List all available profiles."""
+    try:
+        profiles = []
+        if not os.path.exists(PROFILES_DIR):
+            return json.dumps({"error": f"Profiles directory not found: {PROFILES_DIR}"})
+        for fname in sorted(os.listdir(PROFILES_DIR)):
+            if fname.endswith(".yaml") and fname != "active.yaml":
+                fpath = os.path.join(PROFILES_DIR, fname)
+                with open(fpath) as f:
+                    p = _yaml_module.safe_load(f)
+                profiles.append({
+                    "filename": fname,
+                    "name": p.get("name", fname),
+                    "description": p.get("description", ""),
+                    "fleet": p.get("fleet", {}),
+                })
+        return json.dumps({"profiles": profiles, "total": len(profiles)})
+    except Exception as e:
+        return json.dumps({"error": f"Failed to list profiles: {str(e)}"})
+
+
+def switch_profile(profile_name: str) -> str:
+    """Switch to a different profile by name. Restarts simulator with new fleet config."""
+    try:
+        # Find the profile file
+        profile_file = os.path.join(PROFILES_DIR, f"{profile_name}.yaml")
+        if not os.path.exists(profile_file):
+            available = [f.replace(".yaml", "") for f in os.listdir(PROFILES_DIR)
+                        if f.endswith(".yaml") and f != "active.yaml"]
+            return json.dumps({
+                "error": f"Profile '{profile_name}' not found",
+                "available": available
+            })
+
+        # Read the profile
+        with open(profile_file) as f:
+            profile = _yaml_module.safe_load(f)
+
+        # Copy as active profile
+        import shutil
+        shutil.copy2(profile_file, ACTIVE_PROFILE)
+
+        # Restart simulator with new fleet config
+        fleet = profile.get("fleet", {})
+        num_trucks = fleet.get("trucks", 5)
+        num_rooms = fleet.get("cold_rooms", 5)
+        sim_config = profile.get("simulator", {})
+        publish_interval = sim_config.get("publish_interval", 5.0)
+
+        restart_result = restart_simulator(env_overrides={
+            "NUM_TRUCKS": str(num_trucks),
+            "NUM_COLD_ROOMS": str(num_rooms),
+            "PUBLISH_INTERVAL": str(publish_interval),
+        })
+
+        return json.dumps({
+            "action": "switch_profile",
+            "profile": profile_name,
+            "fleet": fleet,
+            "thresholds": list(profile.get("thresholds", {}).keys()),
+            "simulator_restart": json.loads(restart_result),
+        })
+    except Exception as e:
+        return json.dumps({"error": f"Failed to switch profile: {str(e)}"})
+
+
+def update_threshold(threshold_type: str, temp_warning: float = None, temp_critical: float = None) -> str:
+    """Update a threshold in the active profile."""
+    try:
+        if not os.path.exists(ACTIVE_PROFILE):
+            return json.dumps({"error": "No active profile to update"})
+
+        with open(ACTIVE_PROFILE) as f:
+            profile = _yaml_module.safe_load(f)
+
+        thresholds = profile.get("thresholds", {})
+        if threshold_type not in thresholds:
+            return json.dumps({
+                "error": f"Unknown threshold type: {threshold_type}",
+                "available": list(thresholds.keys())
+            })
+
+        if temp_warning is not None:
+            thresholds[threshold_type]["temp_warning"] = temp_warning
+        if temp_critical is not None:
+            thresholds[threshold_type]["temp_critical"] = temp_critical
+
+        profile["thresholds"] = thresholds
+
+        with open(ACTIVE_PROFILE, "w") as f:
+            _yaml_module.dump(profile, f, default_flow_style=False)
+
+        return json.dumps({
+            "action": "update_threshold",
+            "threshold_type": threshold_type,
+            "updated": thresholds[threshold_type],
+        })
+    except Exception as e:
+        return json.dumps({"error": f"Failed to update threshold: {str(e)}"})

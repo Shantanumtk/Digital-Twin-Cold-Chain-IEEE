@@ -51,3 +51,9 @@ export async function fetchAlerts(assetId?: string, hours: number = 24) {
   if (!res.ok) throw new Error('Failed to fetch alerts');
   return res.json();
 }
+
+export async function fetchProfile() {
+  const res = await fetch(`${API_URL}/profile`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch profile');
+  return res.json();
+}

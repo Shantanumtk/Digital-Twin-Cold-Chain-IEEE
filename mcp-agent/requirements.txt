@@ -13,4 +13,4 @@ paho-mqtt>=2.1.0
 
 # Utilities
 python-dotenv>=1.0.0
-httpx>=0.28.0
+httpx>=0.28.0pyyaml>=6.0.0

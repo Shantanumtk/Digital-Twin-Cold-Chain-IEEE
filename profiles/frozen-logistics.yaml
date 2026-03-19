@@ -1,0 +1,38 @@
+name: frozen-logistics
+description: Large frozen goods fleet with strict temperature control
+
+fleet:
+  trucks: 12
+  cold_rooms: 3
+
+thresholds:
+  frozen_goods:
+    temp_warning: -15.0
+    temp_critical: -10.0
+    humidity_min: 40
+    humidity_max: 55
+  chilled_goods:
+    temp_warning: 2.0
+    temp_critical: 6.0
+    humidity_min: 50
+    humidity_max: 70
+  pharma:
+    temp_warning: 2.0
+    temp_critical: 5.0
+    humidity_min: 45
+    humidity_max: 65
+  ambient_storage:
+    temp_warning: 20.0
+    temp_critical: 25.0
+    humidity_min: 30
+    humidity_max: 80
+
+asset_defaults:
+  refrigerated_truck: frozen_goods
+  cold_room: frozen_goods
+
+asset_assignments: {}
+
+simulator:
+  publish_interval: 5.0
+  mqtt_qos: 1

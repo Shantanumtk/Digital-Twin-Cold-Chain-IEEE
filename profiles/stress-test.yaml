@@ -1,0 +1,38 @@
+name: stress-test
+description: Large fleet for stress testing the monitoring system
+
+fleet:
+  trucks: 20
+  cold_rooms: 10
+
+thresholds:
+  frozen_goods:
+    temp_warning: -10.0
+    temp_critical: -5.0
+    humidity_min: 40
+    humidity_max: 60
+  chilled_goods:
+    temp_warning: 4.0
+    temp_critical: 8.0
+    humidity_min: 50
+    humidity_max: 70
+  pharma:
+    temp_warning: 2.0
+    temp_critical: 5.0
+    humidity_min: 45
+    humidity_max: 65
+  ambient_storage:
+    temp_warning: 20.0
+    temp_critical: 25.0
+    humidity_min: 30
+    humidity_max: 80
+
+asset_defaults:
+  refrigerated_truck: frozen_goods
+  cold_room: chilled_goods
+
+asset_assignments: {}
+
+simulator:
+  publish_interval: 2.0
+  mqtt_qos: 1

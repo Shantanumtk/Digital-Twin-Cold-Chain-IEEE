@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from confluent_kafka import Consumer
 
 from state_calculator import StateCalculator
+from profile_loader import get_profile_summary, reload_profile
 from redis_client import RedisClient
 from mongo_client import MongoDBClient
 
@@ -324,6 +325,20 @@ async def get_stats():
         raise HTTPException(status_code=500, detail="Failed to get stats")
     return stats
 
+
+
+
+@app.get("/profile")
+async def get_active_profile():
+    """Get the currently active profile configuration."""
+    return get_profile_summary()
+
+
+@app.post("/profile/reload")
+async def reload_active_profile():
+    """Reload the active profile from disk."""
+    profile = reload_profile()
+    return {"message": "Profile reloaded", "name": profile.get("name", "unknown")}
 
 if __name__ == "__main__":
     import uvicorn

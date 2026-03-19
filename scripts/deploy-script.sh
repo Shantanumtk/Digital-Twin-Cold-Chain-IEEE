@@ -7,7 +7,7 @@
 #
 # Usage:
 #   bash scripts/deploy-script.sh                          # Deploy without MCP Agent
-#   bash scripts/deploy-script.sh --anthropic-key sk-xxx   # Deploy with MCP Agent
+#   bash scripts/deploy-script.sh --api-key sk-xxx   # Deploy with MCP Agent
 # =============================================================================
 
 set -euo pipefail
@@ -48,17 +48,19 @@ STEP_STATUSES=()
 STEP_DETAILS=()
 
 # Parse flags
-ANTHROPIC_KEY=""
+API_KEY=""
+PROFILE_NAME="default"
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --anthropic-key) ANTHROPIC_KEY="$2"; shift 2 ;;
+    --api-key) API_KEY="$2"; shift 2 ;;
     --ssh-key)       SSH_KEY="$2"; shift 2 ;;
+    --profile)       PROFILE_NAME="$2"; shift 2 ;;
     *) shift ;;
   esac
 done
 
 # Calculate total steps (14 if MCP Agent, 13 if not)
-if [ -n "$ANTHROPIC_KEY" ]; then
+if [ -n "$API_KEY" ]; then
   TOTAL_STEPS=14
 else
   TOTAL_STEPS=13
@@ -412,6 +414,18 @@ apply_configmaps() {
     --from-literal=MONGO_DB="coldchain" \
     --dry-run=client -o yaml | kubectl apply -f -
 
+  # Create profile ConfigMap from selected YAML
+  PROFILE_FILE="profiles/${PROFILE_NAME}.yaml"
+  if [ -f "$PROFILE_FILE" ]; then
+    kubectl create configmap profile-config -n "$NAMESPACE" \
+      --from-file=active.yaml="$PROFILE_FILE" \
+      --dry-run=client -o yaml | kubectl apply -f -
+    log_done "Profile ConfigMap created from $PROFILE_FILE"
+  else
+    log_error "Profile file not found: $PROFILE_FILE"
+    log_info "Available profiles: $(ls profiles/*.yaml 2>/dev/null | xargs -I{} basename {} .yaml | tr '\n' ' ')"
+  fi
+
   log_done "ConfigMaps applied (MQTT=$MQTT_BROKER_IP, MongoDB=$MONGODB_PRIVATE_IP)"
   track_step "ConfigMaps" "pass" "3 configmaps applied"
 }
@@ -501,6 +515,12 @@ deploy_app_services() {
     fi
   done
 
+  # Mount profile ConfigMap in state-engine
+  kubectl patch deployment state-engine -n "$NAMESPACE" --type=json -p='[
+    {"op":"add","path":"/spec/template/spec/volumes","value":[{"name":"profile","configMap":{"name":"profile-config"}}]},
+    {"op":"add","path":"/spec/template/spec/containers/0/volumeMounts","value":[{"name":"profile","mountPath":"/app/config","readOnly":true}]}
+  ]' 2>/dev/null || log_info "Profile volume already mounted on state-engine"
+
   log_info "Waiting for services to be ready..."
   for deploy_name in "${DEPLOY_NAMES[@]}"; do
     kubectl rollout status deployment "$deploy_name" -n "$NAMESPACE" --timeout=180s
@@ -548,17 +568,29 @@ deploy_dashboard() {
   fi
 
   # Set MCP Agent URL if deploying with agent
-  if [ -n "$ANTHROPIC_KEY" ]; then
+  if [ -n "$API_KEY" ]; then
     kubectl set env deployment/dashboard -n "$NAMESPACE" \
       MCP_AGENT_URL="http://${MQTT_BROKER_PRIVATE_IP}:8001"
     log_done "MCP Agent URL set to http://${MQTT_BROKER_PRIVATE_IP}:8001"
   fi
 
-  # Set auth env vars
+  # Get dashboard LoadBalancer URL for auth redirect
+  DASH_LB_URL=$(kubectl get svc -n "$NAMESPACE" dashboard \
+    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+  if [ -z "$DASH_LB_URL" ]; then
+    log_info "Waiting for dashboard LoadBalancer..."
+    kubectl wait --for=jsonpath='{.status.loadBalancer.ingress[0].hostname}' \
+      svc/dashboard -n "$NAMESPACE" --timeout=120s 2>/dev/null || true
+    DASH_LB_URL=$(kubectl get svc -n "$NAMESPACE" dashboard \
+      -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "localhost:3000")
+  fi
+
+  # Set auth env vars with actual dashboard URL
   kubectl set env deployment/dashboard -n "$NAMESPACE" \
     AUTH_MONGO_URI="mongodb://${MONGODB_PRIVATE_IP}:27017" \
     NEXTAUTH_SECRET="coldchain-digital-twin-secret-2026" \
-    NEXTAUTH_URL="http://${DASH_URL:-localhost:3000}"
+    NEXTAUTH_URL="http://${DASH_LB_URL}"
+  log_done "NEXTAUTH_URL set to http://${DASH_LB_URL}"
 
   log_info "Waiting for dashboard pods..."
   kubectl rollout status deployment dashboard -n "$NAMESPACE" --timeout=180s
@@ -573,8 +605,8 @@ deploy_dashboard() {
 deploy_mcp_agent() {
   log_step "Deploy MCP Agent (Phase 5)"
 
-  if [ -z "$ANTHROPIC_KEY" ]; then
-    log_info "No --anthropic-key provided, skipping MCP Agent"
+  if [ -z "$API_KEY" ]; then
+    log_info "No --api-key provided, skipping MCP Agent"
     track_step "MCP Agent (Phase 5)" "skip" "No API key provided"
     return 0
   fi
@@ -706,9 +738,9 @@ YAML
 
   ENV_FILE=$(mktemp)
   cat > "$ENV_FILE" << ENVGEN
-OPENAI_API_KEY=${ANTHROPIC_KEY}
-OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
-LLM_MODEL=gemini-2.5-flash
+OPENAI_API_KEY=${API_KEY}
+OPENAI_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-4o-mini
 MONGO_URI=mongodb://${MONGODB_PRIVATE_IP}:27017
 MONGO_DB=coldchain
 REDIS_HOST=${EKS_NODE_IP}
@@ -721,12 +753,32 @@ MCP_HOST=0.0.0.0
 MCP_PORT=8001
 ENVGEN
 
+  # Read fleet config from profile for simulator
+  PROFILE_FILE="profiles/${PROFILE_NAME}.yaml"
+  if [ -f "$PROFILE_FILE" ]; then
+    PROFILE_TRUCKS=$(python3 -c "import yaml; print(yaml.safe_load(open('$PROFILE_FILE'))['fleet']['trucks'])" 2>/dev/null || echo "5")
+    PROFILE_ROOMS=$(python3 -c "import yaml; print(yaml.safe_load(open('$PROFILE_FILE'))['fleet']['cold_rooms'])" 2>/dev/null || echo "5")
+    PROFILE_INTERVAL=$(python3 -c "import yaml; print(yaml.safe_load(open('$PROFILE_FILE'))['simulator']['publish_interval'])" 2>/dev/null || echo "5.0")
+    log_info "Profile fleet: ${PROFILE_TRUCKS} trucks, ${PROFILE_ROOMS} rooms, interval ${PROFILE_INTERVAL}s"
+  else
+    PROFILE_TRUCKS="5"
+    PROFILE_ROOMS="5"
+    PROFILE_INTERVAL="5.0"
+  fi
+
   log_info "Uploading MCP Agent to MQTT EC2 (${MQTT_BROKER_IP})..."
 
   # Ensure mcp-agent directory exists on MQTT EC2
   ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no ${SSH_USER}@${MQTT_BROKER_IP} "mkdir -p ~/mcp-agent" 2>/dev/null
 
   # Upload agent code (scp contents, not nested dir)
+  # Upload profiles directory
+  ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no ${SSH_USER}@${MQTT_BROKER_IP} "mkdir -p ~/CPSC-597-Digital-Twin-Cold-Chain/profiles" 2>/dev/null
+  scp -i "$SSH_KEY" -o StrictHostKeyChecking=no -r profiles/* ${SSH_USER}@${MQTT_BROKER_IP}:~/CPSC-597-Digital-Twin-Cold-Chain/profiles/ 2>/dev/null
+  # Copy active profile
+  scp -i "$SSH_KEY" -o StrictHostKeyChecking=no "profiles/${PROFILE_NAME}.yaml" ${SSH_USER}@${MQTT_BROKER_IP}:~/CPSC-597-Digital-Twin-Cold-Chain/profiles/active.yaml 2>/dev/null
+  log_done "Profiles uploaded (active: ${PROFILE_NAME})"
+
   scp -i "$SSH_KEY" -o StrictHostKeyChecking=no -r mcp-agent/* ${SSH_USER}@${MQTT_BROKER_IP}:~/mcp-agent/ 2>/dev/null
   scp -i "$SSH_KEY" -o StrictHostKeyChecking=no "$ENV_FILE" ${SSH_USER}@${MQTT_BROKER_IP}:~/mcp-agent/.env 2>/dev/null
   rm -f "$ENV_FILE"
@@ -798,7 +850,7 @@ print_summary() {
   printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "MQTT Broker" "${MQTT_BROKER_IP}:1883"
   printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "MongoDB (private)" "${MONGODB_PRIVATE_IP}:27017"
 
-  if [ -n "$ANTHROPIC_KEY" ]; then
+  if [ -n "$API_KEY" ]; then
     printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "MCP Agent" "http://${MQTT_BROKER_IP}:8001"
     printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "MCP Query API" "POST http://${MQTT_BROKER_IP}:8001/api/chat/query"
     printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "MCP Sim API" "POST http://${MQTT_BROKER_IP}:8001/api/chat/simulate"
@@ -806,7 +858,7 @@ print_summary() {
 
   echo -e "${BOLD}╚═══════════════════╩════════════════════════════════════════════════════╝${NC}"
 
-  if [ -n "$ANTHROPIC_KEY" ]; then
+  if [ -n "$API_KEY" ]; then
     echo ""
     echo -e "  ${BOLD}MCP Agent Architecture:${NC}"
     echo "  MQTT EC2 (${MQTT_BROKER_IP} / ${MQTT_BROKER_PRIVATE_IP})"
@@ -850,11 +902,12 @@ main() {
   echo "  ╚═══════════════════════════════════════════════════════╝"
   echo -e "${NC}"
 
-  if [ -n "$ANTHROPIC_KEY" ]; then
-    echo -e "  ${GREEN}MCP Agent: ENABLED (--anthropic-key provided)${NC}"
+  if [ -n "$API_KEY" ]; then
+    echo -e "  ${GREEN}MCP Agent: ENABLED (--api-key provided)${NC}"
   else
-    echo -e "  ${YELLOW}MCP Agent: DISABLED (pass --anthropic-key to enable)${NC}"
+    echo -e "  ${YELLOW}MCP Agent: DISABLED (pass --api-key to enable)${NC}"
   fi
+  echo -e "  ${CYAN}Profile: ${PROFILE_NAME}${NC}"
   echo ""
 
   ensure_state_bucket       # Step  1
@@ -870,7 +923,7 @@ main() {
   deploy_app_services       # Step 11
   deploy_dashboard          # Step 12
 
-  if [ -n "$ANTHROPIC_KEY" ]; then
+  if [ -n "$API_KEY" ]; then
     deploy_mcp_agent        # Step 13
   fi
 

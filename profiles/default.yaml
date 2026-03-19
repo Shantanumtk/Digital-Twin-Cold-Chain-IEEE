@@ -1,0 +1,45 @@
+name: default
+description: Standard configuration with 5 trucks and 5 cold rooms
+
+fleet:
+  trucks: 5
+  cold_rooms: 5
+
+thresholds:
+  frozen_goods:
+    temp_warning: -10.0
+    temp_critical: -5.0
+    humidity_min: 40
+    humidity_max: 60
+  chilled_goods:
+    temp_warning: 4.0
+    temp_critical: 8.0
+    humidity_min: 50
+    humidity_max: 70
+  pharma:
+    temp_warning: 2.0
+    temp_critical: 5.0
+    humidity_min: 45
+    humidity_max: 65
+  ambient_storage:
+    temp_warning: 20.0
+    temp_critical: 25.0
+    humidity_min: 30
+    humidity_max: 80
+
+# Default assignments: trucks get frozen_goods, rooms get chilled_goods
+asset_defaults:
+  refrigerated_truck: frozen_goods
+  cold_room: chilled_goods
+
+# Override specific assets
+asset_assignments:
+  truck01: frozen_goods
+  truck02: frozen_goods
+  truck03: chilled_goods
+  truck04: frozen_goods
+  truck05: pharma
+
+simulator:
+  publish_interval: 5.0
+  mqtt_qos: 1

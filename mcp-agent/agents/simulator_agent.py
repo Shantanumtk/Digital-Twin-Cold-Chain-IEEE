@@ -113,6 +113,52 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "get_active_profile",
+            "description": "Get the currently active configuration profile (fleet size, thresholds, assignments)",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_profiles",
+            "description": "List all available configuration profiles",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "switch_profile",
+            "description": "Switch to a different configuration profile. Restarts simulator with new fleet config and updates thresholds.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "profile_name": {"type": "string", "description": "Profile name: 'default', 'frozen-logistics', 'pharma-delivery', 'stress-test', 'demo'"}
+                },
+                "required": ["profile_name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_threshold",
+            "description": "Update temperature thresholds in the active profile for a specific threshold type",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "threshold_type": {"type": "string", "description": "One of: frozen_goods, chilled_goods, pharma, ambient_storage"},
+                    "temp_warning": {"type": "number", "description": "New warning temperature threshold in Celsius"},
+                    "temp_critical": {"type": "number", "description": "New critical temperature threshold in Celsius"}
+                },
+                "required": ["threshold_type"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "restart_simulator",
             "description": "Restart the sensor simulator with optional config changes (publish interval, counts, etc.)",
             "parameters": {
@@ -136,6 +182,10 @@ TOOL_HANDLERS = {
     "trigger_power_outage": lambda args: simulator_tools.trigger_power_outage(**args),
     "scale_fleet": lambda args: simulator_tools.scale_fleet(**args),
     "restart_simulator": lambda args: simulator_tools.restart_simulator(**args),
+    "get_active_profile": lambda args: simulator_tools.get_active_profile(),
+    "list_profiles": lambda args: simulator_tools.list_profiles(),
+    "switch_profile": lambda args: simulator_tools.switch_profile(**args),
+    "update_threshold": lambda args: simulator_tools.update_threshold(**args),
 }
 
 

@@ -1,0 +1,38 @@
+name: pharma-delivery
+description: Pharmaceutical delivery with tight temperature control
+
+fleet:
+  trucks: 4
+  cold_rooms: 8
+
+thresholds:
+  frozen_goods:
+    temp_warning: -10.0
+    temp_critical: -5.0
+    humidity_min: 40
+    humidity_max: 60
+  chilled_goods:
+    temp_warning: 4.0
+    temp_critical: 8.0
+    humidity_min: 50
+    humidity_max: 70
+  pharma:
+    temp_warning: 2.0
+    temp_critical: 4.0
+    humidity_min: 45
+    humidity_max: 60
+  ambient_storage:
+    temp_warning: 18.0
+    temp_critical: 22.0
+    humidity_min: 35
+    humidity_max: 70
+
+asset_defaults:
+  refrigerated_truck: pharma
+  cold_room: pharma
+
+asset_assignments: {}
+
+simulator:
+  publish_interval: 3.0
+  mqtt_qos: 1
