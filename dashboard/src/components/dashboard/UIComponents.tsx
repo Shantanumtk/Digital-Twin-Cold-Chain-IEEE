@@ -8,7 +8,7 @@ export function Badge({ state, small }: { state: string; small?: boolean }) {
   return (
     <span style={{
       background: `${c}18`, color: c,
-      fontSize: small ? 9 : 10, fontWeight: 700,
+      fontSize: small ? 11 : 12, fontWeight: 700,
       padding: small ? "2px 5px" : "2px 7px",
       borderRadius: 3, letterSpacing: "0.04em",
       border: `1px solid ${c}25`,
@@ -19,7 +19,7 @@ export function Badge({ state, small }: { state: string; small?: boolean }) {
 }
 
 // ─── Monospace text ───
-export function Mono({ children, color = theme.text, size = 13 }: { children: React.ReactNode; color?: string; size?: number }) {
+export function Mono({ children, color = theme.text, size = 14 }: { children: React.ReactNode; color?: string; size?: number }) {
   return (
     <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, fontSize: size, color }}>
       {children}
@@ -54,7 +54,7 @@ export function Ring({ pct, color, size = 48, label }: { pct: number; color: str
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(148,163,184,0.06)" strokeWidth="4" />
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth="4" strokeDasharray={`${pct * circ} ${circ}`} strokeLinecap="round" />
       </svg>
-      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size < 50 ? 9 : 11, fontWeight: 700, color, fontFamily: "'JetBrains Mono', monospace" }}>
+      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size < 50 ? 11 : 14, fontWeight: 700, color, fontFamily: "'JetBrains Mono', monospace" }}>
         {label}
       </div>
     </div>
@@ -78,9 +78,9 @@ export function StatCard({ label, value, color, icon, sub }: { label: string; va
         {icon}
       </div>
       <div>
-        <div style={{ fontSize: 9, color: theme.dim, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
-        <Mono color={color} size={18}>{value}</Mono>
-        {sub && <div style={{ fontSize: 9, color: theme.dim, marginTop: 1 }}>{sub}</div>}
+        <div style={{ fontSize: 11, color: theme.dim, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
+        <Mono color={color} size={22}>{value}</Mono>
+        {sub && <div style={{ fontSize: 11, color: theme.dim, marginTop: 2 }}>{sub}</div>}
       </div>
     </Card>
   );

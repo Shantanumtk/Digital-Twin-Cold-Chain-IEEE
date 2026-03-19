@@ -49,10 +49,10 @@ export default function DetailModal({ asset, initialTab = "diagram", onClose }: 
         <div style={{ padding: "16px 22px", borderBottom: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 17, fontWeight: 700, color: theme.text }}>{a.asset_id}</span>
+              <span style={{ fontSize: 20, fontWeight: 700, color: theme.text }}>{a.asset_id}</span>
               <Badge state={a.state} />
             </div>
-            <div style={{ fontSize: 11, color: theme.dim, marginTop: 3 }}>
+            <div style={{ fontSize: 13, color: theme.dim, marginTop: 3 }}>
               {a.cargo || a.asset_type} · {a.profile || "default"} · {isTruck ? (a.route || "No route") : (a.site || "No site")}
             </div>
           </div>
@@ -67,13 +67,13 @@ export default function DetailModal({ asset, initialTab = "diagram", onClose }: 
               onClick={() => setTab(t.k)}
               style={{
                 padding: "5px 10px", borderRadius: 7, cursor: "pointer",
-                fontSize: 11, fontWeight: 500, display: "flex", alignItems: "center", gap: 4,
+                fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 4,
                 background: tab === t.k ? theme.accentDim : "transparent",
                 color: tab === t.k ? theme.accent : theme.muted,
                 transition: "all 0.15s",
               }}
             >
-              <span style={{ fontSize: 13 }}>{t.i}</span>{t.l}
+              <span style={{ fontSize: 15 }}>{t.i}</span>{t.l}
             </div>
           ))}
         </div>

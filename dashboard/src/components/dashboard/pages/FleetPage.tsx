@@ -25,37 +25,37 @@ function ActiveRoutes({ trucks }: { trucks: Asset[] }) {
   const stopped = trucks.filter(t => (t.speed || 0) === 0);
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, marginBottom: 10 }}>
+      <div style={{ fontSize: 15, fontWeight: 600, color: theme.text, marginBottom: 10 }}>
         In Transit ({active.length})
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10, marginBottom: 20 }}>
         {active.map(t => (
           <Card key={t.asset_id} style={{ padding: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>{t.asset_id}</span>
+              <span style={{ fontSize: 15, fontWeight: 600, color: theme.text }}>{t.asset_id}</span>
               <Badge state={t.state} small />
             </div>
-            <div style={{ fontSize: 11, color: theme.muted, marginBottom: 4 }}>{t.route || "Unknown route"}</div>
+            <div style={{ fontSize: 13, color: theme.muted, marginBottom: 4 }}>{t.route || "Unknown route"}</div>
             <div style={{ display: "flex", gap: 16 }}>
-              <div><span style={{ fontSize: 9, color: theme.dim }}>Speed </span><Mono color={theme.blue} size={12}>{t.speed} km/h</Mono></div>
-              <div><span style={{ fontSize: 9, color: theme.dim }}>Temp </span><Mono color={stateColor(t.state)} size={12}>{t.temperature_c?.toFixed(1)}°C</Mono></div>
+              <div><span style={{ fontSize: 11, color: theme.dim }}>Speed </span><Mono color={theme.blue} size={12}>{t.speed} km/h</Mono></div>
+              <div><span style={{ fontSize: 11, color: theme.dim }}>Temp </span><Mono color={stateColor(t.state)} size={12}>{t.temperature_c?.toFixed(1)}°C</Mono></div>
             </div>
           </Card>
         ))}
         {active.length === 0 && <div style={{ color: theme.dim, padding: 20 }}>No trucks in transit</div>}
       </div>
 
-      <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, marginBottom: 10 }}>
+      <div style={{ fontSize: 15, fontWeight: 600, color: theme.text, marginBottom: 10 }}>
         Stopped ({stopped.length})
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
         {stopped.map(t => (
           <Card key={t.asset_id} style={{ padding: 14, opacity: 0.7 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: theme.text }}>{t.asset_id}</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>{t.asset_id}</span>
               <Badge state={t.state} small />
             </div>
-            <div style={{ fontSize: 10, color: theme.dim }}>{t.route || "Parked"} · {t.temperature_c?.toFixed(1)}°C</div>
+            <div style={{ fontSize: 12, color: theme.dim }}>{t.route || "Parked"} · {t.temperature_c?.toFixed(1)}°C</div>
           </Card>
         ))}
       </div>
@@ -109,7 +109,7 @@ function Performance({ trucks }: { trucks: Asset[] }) {
         return (
           <Card key={t.asset_id} style={{ padding: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>{t.asset_id}</span>
+              <span style={{ fontSize: 15, fontWeight: 600, color: theme.text }}>{t.asset_id}</span>
               <Badge state={t.state} small />
             </div>
             {[

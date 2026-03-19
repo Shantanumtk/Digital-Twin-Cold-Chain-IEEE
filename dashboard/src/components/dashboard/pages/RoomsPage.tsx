@@ -32,15 +32,15 @@ function SiteOverview({ rooms }: { rooms: Asset[] }) {
     <div>
       {Array.from(sites.entries()).map(([site, siteRooms]) => (
         <div key={site} style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ fontSize: 16, fontWeight: 600, color: theme.text, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 16 }}>🏭</span> {site}
-            <span style={{ fontSize: 10, color: theme.dim, fontWeight: 400 }}>({siteRooms.length} rooms)</span>
+            <span style={{ fontSize: 12, color: theme.dim, fontWeight: 400 }}>({siteRooms.length} rooms)</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
             {siteRooms.map(r => (
               <Card key={r.asset_id} style={{ padding: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: theme.text }}>{r.asset_id}</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>{r.asset_id}</span>
                   <Badge state={r.state} small />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
@@ -71,8 +71,8 @@ function TempMap({ rooms }: { rooms: Asset[] }) {
               <div style={{ fontSize: 24, fontWeight: 700, color: col, fontFamily: "'JetBrains Mono', monospace" }}>
                 {temp.toFixed(1)}°
               </div>
-              <div style={{ fontSize: 10, color: theme.muted, marginTop: 4 }}>{r.asset_id}</div>
-              <div style={{ fontSize: 9, color: theme.dim }}>{r.site || "—"}</div>
+              <div style={{ fontSize: 12, color: theme.muted, marginTop: 4 }}>{r.asset_id}</div>
+              <div style={{ fontSize: 11, color: theme.dim }}>{r.site || "—"}</div>
             </Card>
           );
         })}
@@ -92,7 +92,7 @@ function Compliance({ rooms }: { rooms: Asset[] }) {
           { l: "Total Rooms", v: rooms.length, c: theme.blue },
         ].map(s => (
           <Card key={s.l} style={{ padding: 14, textAlign: "center" }}>
-            <div style={{ fontSize: 9, color: theme.dim, marginBottom: 4 }}>{s.l}</div>
+            <div style={{ fontSize: 11, color: theme.dim, marginBottom: 4 }}>{s.l}</div>
             <Ring pct={rooms.length > 0 ? s.v / rooms.length : 0} color={s.c} size={56} label={String(s.v)} />
           </Card>
         ))}

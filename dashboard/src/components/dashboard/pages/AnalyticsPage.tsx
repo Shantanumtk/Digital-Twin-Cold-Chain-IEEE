@@ -36,7 +36,7 @@ function TempTrends({ assets, trucks, rooms }: { assets: Asset[]; trucks: Asset[
 
       {/* Multi-line fleet chart */}
       <Card style={{ padding: 16, marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: theme.text, marginBottom: 10 }}>Temperature Trends — All Assets (24h)</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, marginBottom: 10 }}>Temperature Trends — All Assets (24h)</div>
         <svg viewBox="0 0 640 140" style={{ width: "100%", height: 140 }}>
           {/* Grid lines */}
           {[-25, -20, -15, -10, -5, 0, 5, 10].map((v, i) => (
@@ -71,7 +71,7 @@ function TempTrends({ assets, trucks, rooms }: { assets: Asset[]; trucks: Asset[
 
       {/* Temperature distribution */}
       <Card style={{ padding: 16, marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: theme.text, marginBottom: 10 }}>Temperature Distribution</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, marginBottom: 10 }}>Temperature Distribution</div>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 80 }}>
           {[
             { range: "<-20", count: assets.filter(a => a.temperature_c < -20).length, c: theme.blue },
@@ -101,7 +101,7 @@ function TempTrends({ assets, trucks, rooms }: { assets: Asset[]; trucks: Asset[
         {assets.map(a => (
           <Card key={a.asset_id} style={{ padding: "10px 12px", display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: theme.text }}>{a.asset_id}</div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: theme.text }}>{a.asset_id}</div>
               <Mono color={stateColor(a.state)} size={14}>{a.temperature_c?.toFixed(1)}°C</Mono>
             </div>
             <Sparkline data={sparkData(a.temperature_c)} color={stateColor(a.state)} width={60} height={24} />
@@ -131,7 +131,7 @@ function FleetEfficiency({ trucks, rooms, assets }: { trucks: Asset[]; rooms: As
 
       {/* Compressor cycles chart */}
       <Card style={{ padding: 16, marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: theme.text, marginBottom: 10 }}>Compressor Cycles per Asset (24h)</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, marginBottom: 10 }}>Compressor Cycles per Asset (24h)</div>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 90 }}>
           {assets.map(a => {
             const cycles = a.compressor_running ? Math.floor(Math.random() * 15 + 10) : 0;
@@ -151,7 +151,7 @@ function FleetEfficiency({ trucks, rooms, assets }: { trucks: Asset[]; rooms: As
 
       {/* Door open duration chart */}
       <Card style={{ padding: 16, marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: theme.text, marginBottom: 10 }}>Door Open Duration (minutes today)</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, marginBottom: 10 }}>Door Open Duration (minutes today)</div>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 80 }}>
           {assets.map(a => {
             const mins = a.door_open ? Math.floor(Math.random() * 40 + 20) : Math.floor(Math.random() * 10);
@@ -175,7 +175,7 @@ function FleetEfficiency({ trucks, rooms, assets }: { trucks: Asset[]; rooms: As
           const eff = t.compressor_running ? Math.floor(Math.random() * 8 + 88) : 0;
           return (
             <Card key={t.asset_id} style={{ padding: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: theme.text, marginBottom: 8 }}>{t.asset_id}</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, marginBottom: 8 }}>{t.asset_id}</div>
               {[
                 ["Compressor Eff.", `${eff}%`, eff, eff > 90 ? theme.accent : theme.warning],
                 ["Fuel Level", `${t.fuel || 50}%`, t.fuel || 50, (t.fuel || 50) < 40 ? theme.warning : theme.accent],
@@ -216,14 +216,14 @@ function SLACompliance({ assets }: { assets: Asset[] }) {
         ].map(r => (
           <Card key={r.l} style={{ padding: 14, textAlign: "center" }}>
             <Ring pct={r.pct} color={r.c} size={64} label={r.label} />
-            <div style={{ fontSize: 10, color: theme.muted, marginTop: 6 }}>{r.l}</div>
+            <div style={{ fontSize: 12, color: theme.muted, marginTop: 6 }}>{r.l}</div>
           </Card>
         ))}
       </div>
 
       {/* Per-asset SLA bars */}
       <Card style={{ padding: 16, marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: theme.text, marginBottom: 10 }}>Per-Asset SLA Compliance</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, marginBottom: 10 }}>Per-Asset SLA Compliance</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {assets.map(a => {
             const sla = a.state === "NORMAL" ? 98 + Math.random() * 2 : a.state === "WARNING" ? 75 + Math.random() * 10 : 30 + Math.random() * 20;
@@ -241,7 +241,7 @@ function SLACompliance({ assets }: { assets: Asset[] }) {
 
       {/* Incidents chart (7 days) */}
       <Card style={{ padding: 16, marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: theme.text, marginBottom: 10 }}>Incidents — Last 7 Days</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, marginBottom: 10 }}>Incidents — Last 7 Days</div>
         <svg viewBox="0 0 500 100" style={{ width: "100%", height: 100 }}>
           {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d, i) => {
             const w = Math.floor(Math.random() * 3);
@@ -274,9 +274,9 @@ function SLACompliance({ assets }: { assets: Asset[] }) {
           <Card key={ic.type} style={{ padding: 14, display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ width: 40, height: 40, borderRadius: 10, background: `${ic.c}18`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{ic.icon}</div>
             <div>
-              <div style={{ fontSize: 9, color: theme.dim }}>{ic.type}</div>
+              <div style={{ fontSize: 11, color: theme.dim }}>{ic.type}</div>
               <Mono color={ic.c} size={20}>{ic.count}</Mono>
-              <div style={{ fontSize: 9, color: theme.dim }}>today</div>
+              <div style={{ fontSize: 11, color: theme.dim }}>today</div>
             </div>
           </Card>
         ))}
@@ -311,11 +311,11 @@ function Reports() {
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
               <div style={{ width: 40, height: 40, borderRadius: 10, background: `${r.color}18`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{r.icon}</div>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>{r.type}</div>
-                <div style={{ fontSize: 9, color: theme.dim }}>{r.format} format</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: theme.text }}>{r.type}</div>
+                <div style={{ fontSize: 11, color: theme.dim }}>{r.format} format</div>
               </div>
             </div>
-            <div style={{ fontSize: 11, color: theme.muted, marginBottom: 12, lineHeight: 1.4 }}>{r.desc}</div>
+            <div style={{ fontSize: 13, color: theme.muted, marginBottom: 12, lineHeight: 1.4 }}>{r.desc}</div>
             <div style={{
               padding: "8px 14px", borderRadius: 8, textAlign: "center",
               background: r.color, color: "#fff", fontSize: 11, fontWeight: 600,
@@ -330,7 +330,7 @@ function Reports() {
       {/* Export history */}
       <Card style={{ overflow: "hidden" }}>
         <div style={{ padding: "12px 16px", borderBottom: `1px solid ${theme.border}` }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>Export History</span>
+          <span style={{ fontSize: 15, fontWeight: 600, color: theme.text }}>Export History</span>
         </div>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
           <thead>

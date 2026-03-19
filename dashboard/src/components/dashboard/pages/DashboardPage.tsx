@@ -44,25 +44,25 @@ function Overview({ assets, stats, alerts, onAssetClick }: Omit<Props, "subNav" 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 12 }}>
         {/* Asset table */}
         <Card style={{ overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
                 {["Asset", "State", "Temp", "RH", "Door", "Compressor", "Trend", "Updated"].map(h => (
-                  <th key={h} style={{ padding: "9px 10px", textAlign: "left", fontSize: 9, fontWeight: 600, color: theme.dim, textTransform: "uppercase" }}>{h}</th>
+                  <th key={h} style={{ padding: "9px 10px", textAlign: "left", fontSize: 11, fontWeight: 600, color: theme.dim, textTransform: "uppercase" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {assets.map(a => (
                 <tr key={a.asset_id} onClick={() => onAssetClick(a)} style={{ borderBottom: `1px solid ${theme.borderLight}`, cursor: "pointer" }}>
-                  <td style={{ padding: "9px 10px", fontWeight: 600, color: theme.text, fontSize: 12 }}>{a.asset_id}</td>
+                  <td style={{ padding: "9px 10px", fontWeight: 600, color: theme.text, fontSize: 14 }}>{a.asset_id}</td>
                   <td style={{ padding: "9px 10px" }}><Badge state={a.state} small /></td>
                   <td style={{ padding: "9px 10px" }}><Mono color={stateColor(a.state)} size={11}>{a.temperature_c?.toFixed(1)}°</Mono></td>
-                  <td style={{ padding: "9px 10px", color: theme.muted }}>{a.humidity ?? "—"}%</td>
-                  <td style={{ padding: "9px 10px", color: a.door_open ? theme.warning : theme.accent, fontSize: 10 }}>{a.door_open ? "Open" : "Closed"}</td>
-                  <td style={{ padding: "9px 10px", color: a.compressor_running ? theme.accent : theme.critical, fontSize: 10 }}>{a.compressor_running ? "On" : "Off"}</td>
-                  <td style={{ padding: "9px 10px" }}><Sparkline data={sparkData(a)} color={stateColor(a.state)} /></td>
-                  <td style={{ padding: "9px 10px", color: theme.dim, fontSize: 9 }}>{a.last_update || "—"}</td>
+                  <td style={{ padding: "9px 10px", color: theme.muted }}>{a.humidity != null ? Math.round(a.humidity) : "—"}%</td>
+                  <td style={{ padding: "9px 10px", color: a.door_open ? theme.warning : theme.accent, fontSize: 12 }}>{a.door_open ? "Open" : "Closed"}</td>
+                  <td style={{ padding: "9px 10px", color: a.compressor_running ? theme.accent : theme.critical, fontSize: 12 }}>{a.compressor_running ? "On" : "Off"}</td>
+                  <td style={{ padding: "9px 10px" }}><Sparkline data={sparkData(a)} color={stateColor(a.state)} width={80} height={24} /></td>
+                  <td style={{ padding: "9px 10px", color: theme.dim, fontSize: 11 }}>{a.last_update || "Live"}</td>
                 </tr>
               ))}
               {assets.length === 0 && (
@@ -75,7 +75,7 @@ function Overview({ assets, stats, alerts, onAssetClick }: Omit<Props, "subNav" 
         {/* Alerts panel */}
         <Card style={{ overflow: "hidden", alignSelf: "flex-start" }}>
           <div style={{ padding: "10px 12px", borderBottom: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between" }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: theme.text }}>Active Alerts</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>Active Alerts</span>
             <span style={{ fontSize: 9, background: theme.criticalDim, color: theme.critical, padding: "2px 6px", borderRadius: 8, fontWeight: 600 }}>{alerts.length}</span>
           </div>
           {alerts.slice(0, 8).map((al, i) => (
@@ -85,8 +85,8 @@ function Overview({ assets, stats, alerts, onAssetClick }: Omit<Props, "subNav" 
                 background: al.severity === "CRITICAL" ? theme.critical : al.severity === "WARNING" ? theme.warning : theme.blue,
               }} />
               <div>
-                <div style={{ fontSize: 10, color: theme.text, lineHeight: 1.3 }}>{al.message}</div>
-                <div style={{ fontSize: 9, color: theme.dim }}>{al.asset_id} · {al.timestamp || "—"}</div>
+                <div style={{ fontSize: 12, color: theme.text, lineHeight: 1.4 }}>{al.message}</div>
+                <div style={{ fontSize: 11, color: theme.dim }}>{al.asset_id} · {al.timestamp || "—"}</div>
               </div>
             </div>
           ))}
@@ -108,17 +108,17 @@ function FleetSummary({ trucks, onAssetClick }: { trucks: Asset[]; onAssetClick:
           <Card key={t.asset_id} style={{ padding: 14, cursor: "pointer" }} >
             <div onClick={() => onAssetClick(t)} >
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: theme.text }}>{t.asset_id}</span>
+                <span style={{ fontSize: 15, fontWeight: 700, color: theme.text }}>{t.asset_id}</span>
                 <Badge state={t.state} small />
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
-                <div><div style={{ fontSize: 8, color: theme.dim }}>Temp</div><Mono color={stateColor(t.state)} size={11}>{t.temperature_c?.toFixed(1)}°C</Mono></div>
-                <div><div style={{ fontSize: 8, color: theme.dim }}>Speed</div><Mono color={t.speed && t.speed > 0 ? theme.blue : theme.dim} size={11}>{t.speed || 0} km/h</Mono></div>
-                <div><div style={{ fontSize: 8, color: theme.dim }}>Fuel</div><Mono color={(t.fuel || 50) < 40 ? theme.warning : theme.accent} size={11}>{t.fuel || 50}%</Mono></div>
-                <div><div style={{ fontSize: 8, color: theme.dim }}>Mileage</div><Mono color={theme.muted} size={11}>{((t.mileage || 10000) / 1000).toFixed(0)}k</Mono></div>
+                <div><div style={{ fontSize: 10, color: theme.dim }}>Temp</div><Mono color={stateColor(t.state)} size={11}>{t.temperature_c?.toFixed(1)}°C</Mono></div>
+                <div><div style={{ fontSize: 10, color: theme.dim }}>Speed</div><Mono color={t.speed && t.speed > 0 ? theme.blue : theme.dim} size={11}>{t.speed || 0} km/h</Mono></div>
+                <div><div style={{ fontSize: 10, color: theme.dim }}>Fuel</div><Mono color={(t.fuel || 50) < 40 ? theme.warning : theme.accent} size={11}>{t.fuel || 50}%</Mono></div>
+                <div><div style={{ fontSize: 10, color: theme.dim }}>Mileage</div><Mono color={theme.muted} size={11}>{((t.mileage || 10000) / 1000).toFixed(0)}k</Mono></div>
               </div>
               <MiniBar pct={t.fuel || 50} color={(t.fuel || 50) < 40 ? theme.warning : theme.accent} />
-              <div style={{ fontSize: 9, color: theme.dim, marginTop: 6 }}>{t.route || "No route assigned"}</div>
+              <div style={{ fontSize: 11, color: theme.dim, marginTop: 6 }}>{t.route || "No route assigned"}</div>
             </div>
           </Card>
         ))}
@@ -167,17 +167,17 @@ function RoomSummary({ rooms, onAssetClick }: { rooms: Asset[]; onAssetClick: (a
           <Card key={r.asset_id} style={{ padding: 14, cursor: "pointer" }}>
             <div onClick={() => onAssetClick(r)}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: theme.text }}>{r.asset_id}</span>
+                <span style={{ fontSize: 15, fontWeight: 700, color: theme.text }}>{r.asset_id}</span>
                 <Badge state={r.state} small />
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
-                <div><div style={{ fontSize: 8, color: theme.dim }}>Temp</div><Mono color={stateColor(r.state)} size={11}>{r.temperature_c?.toFixed(1)}°C</Mono></div>
-                <div><div style={{ fontSize: 8, color: theme.dim }}>Humidity</div><Mono color={(r.humidity || 50) > 70 ? theme.warning : theme.cyan} size={11}>{r.humidity || 50}%</Mono></div>
-                <div><div style={{ fontSize: 8, color: theme.dim }}>Capacity</div><Mono color={(r.capacity || 60) > 85 ? theme.warning : theme.accent} size={11}>{r.capacity || 60}%</Mono></div>
-                <div><div style={{ fontSize: 8, color: theme.dim }}>Power</div><Mono color={r.compressor_running ? theme.blue : theme.critical} size={11}>{r.power || (r.compressor_running ? "4.2" : "0")} kW</Mono></div>
+                <div><div style={{ fontSize: 10, color: theme.dim }}>Temp</div><Mono color={stateColor(r.state)} size={11}>{r.temperature_c?.toFixed(1)}°C</Mono></div>
+                <div><div style={{ fontSize: 10, color: theme.dim }}>Humidity</div><Mono color={(r.humidity || 50) > 70 ? theme.warning : theme.cyan} size={11}>{r.humidity || 50}%</Mono></div>
+                <div><div style={{ fontSize: 10, color: theme.dim }}>Capacity</div><Mono color={(r.capacity || 60) > 85 ? theme.warning : theme.accent} size={11}>{r.capacity || 60}%</Mono></div>
+                <div><div style={{ fontSize: 10, color: theme.dim }}>Power</div><Mono color={r.compressor_running ? theme.blue : theme.critical} size={11}>{r.power || (r.compressor_running ? "4.2" : "0")} kW</Mono></div>
               </div>
               <MiniBar pct={r.capacity || 60} color={(r.capacity || 60) > 85 ? theme.warning : theme.accent} />
-              <div style={{ fontSize: 9, color: theme.dim, marginTop: 6 }}>{r.site || "No site assigned"}</div>
+              <div style={{ fontSize: 11, color: theme.dim, marginTop: 6 }}>{r.site || "No site assigned"}</div>
             </div>
           </Card>
         ))}
@@ -195,7 +195,7 @@ function RoomSummary({ rooms, onAssetClick }: { rooms: Asset[]; onAssetClick: (a
               <div key={r.asset_id} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
                 <Mono size={9} color={c}>{cap}%</Mono>
                 <div style={{ width: "100%", height: `${cap}%`, background: c, borderRadius: "3px 3px 0 0", minHeight: 4, transition: "height 0.5s" }} />
-                <span style={{ fontSize: 8, color: theme.dim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
+                <span style={{ fontSize: 10, color: theme.dim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
                   {r.asset_id.replace("site", "S").replace("-room", "R")}
                 </span>
               </div>
@@ -237,9 +237,9 @@ function SystemHealth() {
           <Card key={sv.name} style={{ padding: 14 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div style={{ width: 8, height: 8, borderRadius: "50%", background: sv.color }} />
-              <span style={{ fontSize: 12, fontWeight: 600, color: theme.text }}>{sv.name}</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>{sv.name}</span>
             </div>
-            <div style={{ fontSize: 10, color: theme.muted, marginTop: 4 }}>{sv.status}</div>
+            <div style={{ fontSize: 12, color: theme.muted, marginTop: 4 }}>{sv.status}</div>
           </Card>
         ))}
       </div>
@@ -284,7 +284,7 @@ function SystemHealth() {
                 border: `1px solid ${theme.border}`,
               }}>
                 <span style={{ fontSize: 14 }}>{step.icon}</span>
-                <span style={{ fontSize: 10, color: step.color, fontWeight: 500 }}>{step.name}</span>
+                <span style={{ fontSize: 12, color: step.color, fontWeight: 500 }}>{step.name}</span>
               </div>
             ) : (
               <span key={i} style={{ color: theme.dim, fontSize: 14 }}>→</span>

@@ -20,7 +20,7 @@ export default function MonitorPage({ subNav, assets, trucks, rooms, onAssetClic
     <div>
       {/* Summary bar */}
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>
+        <span style={{ fontSize: 16, fontWeight: 600, color: theme.text }}>
           {labels[subNav]} ({list.length})
         </span>
         <div style={{ display: "flex", gap: 8 }}>
@@ -29,7 +29,7 @@ export default function MonitorPage({ subNav, assets, trucks, rooms, onAssetClic
             { label: "Warning", count: list.filter(a => a.state === "WARNING").length, color: theme.warning },
             { label: "Critical", count: list.filter(a => a.state === "CRITICAL").length, color: theme.critical },
           ].map(s => (
-            <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: theme.muted }}>
+            <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, color: theme.muted }}>
               <div style={{ width: 6, height: 6, borderRadius: "50%", background: s.color }} />
               {s.count}
             </div>

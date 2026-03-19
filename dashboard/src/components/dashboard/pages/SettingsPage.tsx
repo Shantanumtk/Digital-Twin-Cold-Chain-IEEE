@@ -12,7 +12,7 @@ function Toggle({ on, label }: { on: boolean; label: string }) {
   const [enabled, setEnabled] = useState(on);
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0" }}>
-      <span style={{ fontSize: 12, color: theme.text }}>{label}</span>
+      <span style={{ fontSize: 14, color: theme.text }}>{label}</span>
       <div
         onClick={() => setEnabled(!enabled)}
         style={{
@@ -33,7 +33,7 @@ function General() {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
       <Card style={{ padding: 18 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, marginBottom: 14 }}>System Configuration</div>
+        <div style={{ fontSize: 16, fontWeight: 600, color: theme.text, marginBottom: 14 }}>System Configuration</div>
         {[
           ["API Endpoint", process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"],
           ["MCP Agent", process.env.MCP_AGENT_URL || "http://localhost:8001"],
@@ -42,14 +42,14 @@ function General() {
           ["Build", "2026-03-19"],
         ].map(([k, v]) => (
           <div key={k as string} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${theme.borderLight}` }}>
-            <span style={{ fontSize: 11, color: theme.muted }}>{k as string}</span>
+            <span style={{ fontSize: 13, color: theme.muted }}>{k as string}</span>
             <Mono size={10} color={theme.text}>{v as string}</Mono>
           </div>
         ))}
       </Card>
 
       <Card style={{ padding: 18 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, marginBottom: 14 }}>Display Preferences</div>
+        <div style={{ fontSize: 16, fontWeight: 600, color: theme.text, marginBottom: 14 }}>Display Preferences</div>
         <Toggle on={true} label="Auto-refresh dashboard" />
         <Toggle on={true} label="Show animated diagrams" />
         <Toggle on={false} label="Compact card view" />
@@ -59,7 +59,7 @@ function General() {
       </Card>
 
       <Card style={{ padding: 18 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, marginBottom: 14 }}>Data Pipeline Status</div>
+        <div style={{ fontSize: 16, fontWeight: 600, color: theme.text, marginBottom: 14 }}>Data Pipeline Status</div>
         {[
           ["MQTT Broker", "Connected", theme.accent],
           ["Kafka Cluster", "3/3 brokers", theme.accent],
@@ -69,7 +69,7 @@ function General() {
           ["MCP Agent", "Online", theme.accent],
         ].map(([k, v, c]) => (
           <div key={k as string} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${theme.borderLight}` }}>
-            <span style={{ fontSize: 11, color: theme.muted }}>{k as string}</span>
+            <span style={{ fontSize: 13, color: theme.muted }}>{k as string}</span>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <div style={{ width: 6, height: 6, borderRadius: "50%", background: c as string }} />
               <span style={{ fontSize: 10, color: c as string }}>{v as string}</span>
@@ -79,8 +79,8 @@ function General() {
       </Card>
 
       <Card style={{ padding: 18 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, marginBottom: 14 }}>Danger Zone</div>
-        <div style={{ fontSize: 11, color: theme.muted, marginBottom: 12, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 16, fontWeight: 600, color: theme.text, marginBottom: 14 }}>Danger Zone</div>
+        <div style={{ fontSize: 13, color: theme.muted, marginBottom: 12, lineHeight: 1.5 }}>
           Actions here can affect system operation. Proceed with caution.
         </div>
         {[
@@ -90,8 +90,8 @@ function General() {
         ].map(action => (
           <div key={action.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${theme.borderLight}` }}>
             <div>
-              <div style={{ fontSize: 11, color: theme.text }}>{action.label}</div>
-              <div style={{ fontSize: 9, color: theme.dim }}>{action.desc}</div>
+              <div style={{ fontSize: 13, color: theme.text }}>{action.label}</div>
+              <div style={{ fontSize: 11, color: theme.dim }}>{action.desc}</div>
             </div>
             <div style={{
               padding: "5px 10px", borderRadius: 6, fontSize: 10, fontWeight: 600,
@@ -117,7 +117,7 @@ function Profiles() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
-        <span style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>Threshold Profiles</span>
+        <span style={{ fontSize: 16, fontWeight: 600, color: theme.text }}>Threshold Profiles</span>
         <div style={{ padding: "6px 14px", borderRadius: 8, background: theme.accent, color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
           + New Profile
         </div>
@@ -127,7 +127,7 @@ function Profiles() {
         {profiles.map(p => (
           <Card key={p.name} style={{ padding: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>{p.name}</div>
+              <div style={{ fontSize: 16, fontWeight: 600, color: theme.text }}>{p.name}</div>
               <span style={{ fontSize: 9, background: theme.surface, color: theme.muted, padding: "2px 8px", borderRadius: 4 }}>{p.assets} assets</span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -160,7 +160,7 @@ function Notifications() {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
       <Card style={{ padding: 18 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, marginBottom: 14 }}>Notification Channels</div>
+        <div style={{ fontSize: 16, fontWeight: 600, color: theme.text, marginBottom: 14 }}>Notification Channels</div>
         <Toggle on={true} label="Dashboard notifications" />
         <Toggle on={true} label="Email alerts" />
         <Toggle on={false} label="SMS alerts" />
@@ -170,7 +170,7 @@ function Notifications() {
       </Card>
 
       <Card style={{ padding: 18 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, marginBottom: 14 }}>Email Recipients</div>
+        <div style={{ fontSize: 16, fontWeight: 600, color: theme.text, marginBottom: 14 }}>Email Recipients</div>
         {[
           { email: "admin@coldchain.local", role: "Admin", enabled: true },
           { email: "ops@coldchain.local", role: "Operator", enabled: true },
@@ -178,8 +178,8 @@ function Notifications() {
         ].map(r => (
           <div key={r.email} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${theme.borderLight}` }}>
             <div>
-              <div style={{ fontSize: 12, color: theme.text }}>{r.email}</div>
-              <div style={{ fontSize: 9, color: theme.dim }}>{r.role}</div>
+              <div style={{ fontSize: 14, color: theme.text }}>{r.email}</div>
+              <div style={{ fontSize: 11, color: theme.dim }}>{r.role}</div>
             </div>
             <span style={{ fontSize: 9, color: r.enabled ? theme.accent : theme.dim, background: r.enabled ? theme.accentDim : theme.surface, padding: "2px 6px", borderRadius: 4 }}>
               {r.enabled ? "Active" : "Disabled"}
@@ -192,7 +192,7 @@ function Notifications() {
       </Card>
 
       <Card style={{ padding: 18, gridColumn: "1 / -1" }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, marginBottom: 14 }}>Alert Severity Routing</div>
+        <div style={{ fontSize: 16, fontWeight: 600, color: theme.text, marginBottom: 14 }}>Alert Severity Routing</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
           {[
             { sev: "Critical", channels: "Dashboard + Email + SMS", color: theme.critical },
@@ -221,7 +221,7 @@ function Users() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
-        <span style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>User Management</span>
+        <span style={{ fontSize: 16, fontWeight: 600, color: theme.text }}>User Management</span>
         <div style={{ padding: "6px 14px", borderRadius: 8, background: theme.accent, color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
           + Add User
         </div>

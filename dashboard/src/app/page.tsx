@@ -49,9 +49,41 @@ export default function HomePage() {
         fetchData("/assets"),
         fetchData("/alerts?limit=20"),
       ]);
-      if (statsRes) setStats(statsRes);
-      if (assetsRes) setAssets(Array.isArray(assetsRes) ? assetsRes : assetsRes.assets || []);
-      if (alertsRes) setAlerts(Array.isArray(alertsRes) ? alertsRes : alertsRes.alerts || []);
+      if (statsRes) {
+        setStats({
+          total_assets: statsRes.total_assets ?? 0,
+          trucks: statsRes.asset_types?.refrigerated_truck ?? statsRes.trucks ?? 0,
+          cold_rooms: statsRes.asset_types?.cold_room ?? statsRes.cold_rooms ?? 0,
+          normal: statsRes.state_counts?.NORMAL ?? statsRes.normal ?? 0,
+          warning: statsRes.state_counts?.WARNING ?? statsRes.warning ?? 0,
+          critical: statsRes.state_counts?.CRITICAL ?? statsRes.critical ?? 0,
+          active_alerts: statsRes.active_alerts ?? 0,
+        });
+      }
+      if (assetsRes) {
+        const raw = Array.isArray(assetsRes) ? assetsRes : assetsRes.assets || [];
+        setAssets(raw.map((a: any) => ({
+          ...a,
+          humidity: a.humidity ?? a.humidity_pct ?? null,
+          speed: a.speed ?? a.location?.speed_kmh ?? 0,
+          last_update: a.last_update ?? (a.updated_at ? new Date(a.updated_at).toLocaleTimeString() : null),
+          route: a.route ?? (a.location ? `${a.location.latitude?.toFixed(2)}, ${a.location.longitude?.toFixed(2)}` : null),
+          site: a.site ?? a.warehouse ?? null,
+          fuel: a.fuel ?? a.fuel_pct ?? null,
+          mileage: a.mileage ?? a.odometer_km ?? null,
+          capacity: a.capacity ?? a.capacity_pct ?? null,
+          power: a.power ?? a.power_kw ?? null,
+        })));
+      }
+      if (alertsRes) {
+        const rawAlerts = Array.isArray(alertsRes) ? alertsRes : alertsRes.alerts || [];
+        setAlerts(rawAlerts.map((al: any) => ({
+          ...al,
+          severity: al.severity ?? al.level ?? al.sev ?? "INFO",
+          message: al.message ?? al.msg ?? al.description ?? "Alert",
+          timestamp: al.timestamp ?? al.created_at ?? al.time ?? null,
+        })));
+      }
     };
     load();
     const interval = setInterval(load, 5000);

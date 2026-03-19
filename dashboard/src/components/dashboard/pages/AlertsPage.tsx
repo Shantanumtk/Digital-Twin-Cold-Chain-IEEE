@@ -27,7 +27,7 @@ function ActiveAlerts({ alerts }: { alerts: any[] }) {
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
         {["all", "critical", "warning", "info"].map(f => (
           <div key={f} onClick={() => setFilter(f)} style={{
-            padding: "5px 12px", borderRadius: 7, cursor: "pointer", fontSize: 11, fontWeight: 500,
+            padding: "5px 12px", borderRadius: 7, cursor: "pointer", fontSize: 13, fontWeight: 500,
             background: filter === f ? theme.accentDim : theme.surface,
             color: filter === f ? theme.accent : theme.dim,
           }}>
@@ -51,10 +51,10 @@ function ActiveAlerts({ alerts }: { alerts: any[] }) {
                 background: al.severity === "CRITICAL" ? theme.critical : al.severity === "WARNING" ? theme.warning : theme.blue,
               }} />
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, color: theme.text, fontWeight: 500 }}>{al.message}</div>
+                <div style={{ fontSize: 14, color: theme.text, fontWeight: 500 }}>{al.message}</div>
                 <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
-                  <span style={{ fontSize: 10, color: theme.muted }}>{al.asset_id}</span>
-                  <span style={{ fontSize: 10, color: theme.dim }}>{al.timestamp || "—"}</span>
+                  <span style={{ fontSize: 12, color: theme.muted }}>{al.asset_id}</span>
+                  <span style={{ fontSize: 12, color: theme.dim }}>{al.timestamp || "—"}</span>
                 </div>
               </div>
               <Badge state={al.severity || "INFO"} small />
@@ -121,7 +121,7 @@ function AlertRules() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>Alert Rules ({rules.length})</span>
+        <span style={{ fontSize: 15, fontWeight: 600, color: theme.text }}>Alert Rules ({rules.length})</span>
         <div style={{ padding: "6px 14px", borderRadius: 8, background: theme.accent, color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
           + New Rule
         </div>
@@ -171,19 +171,19 @@ function Escalations() {
 
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, marginBottom: 12 }}>Escalation Chain</div>
+      <div style={{ fontSize: 15, fontWeight: 600, color: theme.text, marginBottom: 12 }}>Escalation Chain</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
         {chains.map((c, i) => (
           <div key={c.name}>
             <Card style={{ padding: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>{c.name}</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: theme.text }}>{c.name}</div>
                   <div style={{ fontSize: 11, color: theme.muted, marginTop: 3 }}>Trigger: {c.delay}</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ fontSize: 11, color: theme.text }}>{c.contacts}</div>
-                  <div style={{ fontSize: 10, color: theme.dim }}>{c.channel}</div>
+                  <div style={{ fontSize: 12, color: theme.dim }}>{c.channel}</div>
                 </div>
               </div>
             </Card>

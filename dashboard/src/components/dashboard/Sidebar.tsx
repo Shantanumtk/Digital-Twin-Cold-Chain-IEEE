@@ -38,7 +38,7 @@ export default function Sidebar({ activePage, onPageChange }: SidebarProps) {
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: 14, fontWeight: 700, color: "#fff", flexShrink: 0,
         }}>❄</div>
-        {expanded && <span style={{ fontSize: 13, fontWeight: 700, color: theme.text, whiteSpace: "nowrap" }}>ColdChain DT</span>}
+        {expanded && <span style={{ fontSize: 15, fontWeight: 700, color: theme.text, whiteSpace: "nowrap" }}>ColdChain DT</span>}
       </div>
 
       {/* Nav Items */}
@@ -57,8 +57,8 @@ export default function Sidebar({ activePage, onPageChange }: SidebarProps) {
               transition: "all 0.15s", position: "relative",
             }}
           >
-            <span style={{ fontSize: 16, flexShrink: 0 }}>{item.icon}</span>
-            {expanded && <span style={{ fontSize: 12, fontWeight: 500, whiteSpace: "nowrap" }}>{item.label}</span>}
+            <span style={{ fontSize: 20, flexShrink: 0 }}>{item.icon}</span>
+            {expanded && <span style={{ fontSize: 14, fontWeight: 500, whiteSpace: "nowrap" }}>{item.label}</span>}
             {item.badge && (
               <span style={{
                 position: "absolute", top: expanded ? 7 : 5, right: expanded ? 8 : 8,
@@ -87,8 +87,8 @@ export default function Sidebar({ activePage, onPageChange }: SidebarProps) {
         >👤</div>
         {expanded && (
           <div style={{ cursor: "pointer" }} onClick={() => signOut({ callbackUrl: "/login" })}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: theme.text }}>Admin</div>
-            <div style={{ fontSize: 9, color: theme.dim }}>Click to logout</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>Admin</div>
+            <div style={{ fontSize: 11, color: theme.dim }}>Click to logout</div>
           </div>
         )}
       </div>
