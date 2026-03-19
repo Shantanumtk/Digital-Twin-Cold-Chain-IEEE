@@ -13,7 +13,7 @@ import MapPage from "@/components/dashboard/pages/MapPage";
 import AlertsPage from "@/components/dashboard/pages/AlertsPage";
 import SettingsPage from "@/components/dashboard/pages/SettingsPage";
 import FloatingChat from "@/components/dashboard/FloatingChat";
-import DetailModal from "@/components/dashboard/DetailModal";
+import DetailModal from "@/components/AssetDetailModal";
 import { Asset } from "@/lib/types";
 
 // API helper
@@ -138,8 +138,7 @@ export default function HomePage() {
       <FloatingChat />
       {selectedAsset && (
         <DetailModal
-          asset={selectedAsset}
-          initialTab={detailTab}
+          assetId={selectedAsset.asset_id}
           onClose={() => setSelectedAsset(null)}
         />
       )}
