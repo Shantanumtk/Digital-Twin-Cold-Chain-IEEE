@@ -357,7 +357,7 @@ async def get_asset_telemetry(
     Source: MongoDB telemetry collection.
     """
     try:
-        docs = await mongo_client.get_telemetry_history(asset_id, hours=hours, limit=limit)
+        docs = mongo_client.get_telemetry_history(asset_id, hours=hours, limit=limit)
         return {"asset_id": asset_id, "hours": hours, "count": len(docs), "data": docs}
     except Exception as e:
         logger.error(f"telemetry history error for {asset_id}: {e}")
@@ -375,7 +375,7 @@ async def get_door_activity(
     Source: MongoDB telemetry — derived from door_open field transitions.
     """
     try:
-        events = await mongo_client.get_door_events(asset_id, hours=hours)
+        events = mongo_client.get_door_events(asset_id, hours=hours)
         total_open_seconds = sum(e.get("duration_seconds", 0) for e in events if e.get("event_type") == "close")
         return {
             "asset_id": asset_id,
@@ -400,7 +400,7 @@ async def get_compressor_activity(
     Source: MongoDB telemetry — derived from compressor_on field transitions.
     """
     try:
-        events = await mongo_client.get_compressor_events(asset_id, hours=hours)
+        events = mongo_client.get_compressor_events(asset_id, hours=hours)
         on_seconds = sum(e.get("duration_seconds", 0) for e in events if e.get("event_type") == "off")
         window_seconds = hours * 3600
         runtime_pct = round((on_seconds / window_seconds) * 100, 1) if window_seconds > 0 else 0
@@ -428,7 +428,7 @@ async def get_location_history(
     Source: MongoDB telemetry.
     """
     try:
-        points = await mongo_client.get_location_history(asset_id, hours=hours, limit=limit)
+        points = mongo_client.get_location_history(asset_id, hours=hours, limit=limit)
         return {"asset_id": asset_id, "hours": hours, "count": len(points), "route": points}
     except Exception as e:
         logger.error(f"location-history error for {asset_id}: {e}")
@@ -445,7 +445,7 @@ async def get_asset_alert_history(
     Source: MongoDB alerts collection.
     """
     try:
-        alerts = await mongo_client.get_asset_alerts(asset_id, hours=hours)
+        alerts = mongo_client.get_asset_alerts(asset_id, hours=hours)
         severity_counts: dict = {}
         for a in alerts:
             sev = a.get("severity", "UNKNOWN")
@@ -470,7 +470,7 @@ async def get_asset_config(asset_id: str):
     Falls back to profile_loader summary if Redis key missing.
     """
     try:
-        state = await redis_client.get_asset_state(asset_id)
+        state = redis_client.get_asset_state(asset_id)
         if not state:
             raise HTTPException(status_code=404, detail=f"Asset {asset_id} not found")
         profile = get_profile_summary()
@@ -500,19 +500,20 @@ async def get_asset_summary(
     Source: Redis (current) + MongoDB (history aggregation).
     """
     try:
-        state = await redis_client.get_asset_state(asset_id)
+        state = redis_client.get_asset_state(asset_id)
         if not state:
             raise HTTPException(status_code=404, detail=f"Asset {asset_id} not found")
-        telemetry = await mongo_client.get_telemetry_history(asset_id, hours=hours, limit=2000)
-        temps = [t["temperature"] for t in telemetry if t.get("temperature") is not None]
-        alert_docs = await mongo_client.get_asset_alerts(asset_id, hours=hours)
+        telemetry = mongo_client.get_telemetry_history(asset_id, hours=hours, limit=2000)
+        raw_temps = [t.get("temperature") or t.get("temperature_c") for t in telemetry]
+        temps = [t for t in raw_temps if t is not None]
+        alert_docs = mongo_client.get_asset_alerts(asset_id, hours=hours)
         return {
             "asset_id": asset_id,
             "current_state": state.get("state", "UNKNOWN"),
-            "current_temperature": state.get("temperature"),
-            "current_humidity": state.get("humidity"),
+            "current_temperature": state.get("temperature_c"),
+            "current_humidity": state.get("humidity_pct"),
             "door_open": state.get("door_open", False),
-            "compressor_on": state.get("compressor_on", True),
+            "compressor_on": state.get("compressor_running", True),
             "temperature_stats": {
                 "min": round(min(temps), 2) if temps else None,
                 "max": round(max(temps), 2) if temps else None,
@@ -520,7 +521,7 @@ async def get_asset_summary(
                 "samples": len(temps),
             },
             "alert_count_24h": len(alert_docs),
-            "last_updated": state.get("last_updated"),
+            "last_updated": state.get("updated_at"),
         }
     except HTTPException:
         raise

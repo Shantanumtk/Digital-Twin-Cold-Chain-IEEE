@@ -101,49 +101,57 @@ class MongoDBClient:
             return False
     # ── History / Detail helpers (called by new endpoints) ────────────────
 
-    async def get_telemetry_history(self, asset_id: str, hours: int = 24, limit: int = 500):
+    def get_telemetry_history(self, asset_id: str, hours: int = 24, limit: int = 500):
         """Return temperature + humidity timeseries, oldest first."""
         from datetime import datetime, timezone, timedelta
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         coll = self.db["telemetry"]
-        cursor = coll.find(
-            {"asset_id": asset_id, "timestamp": {"$gte": cutoff}},
-            {"_id": 0, "timestamp": 1, "temperature": 1, "humidity": 1},
-            sort=[("timestamp", 1)],
-        ).limit(limit)
-        docs = await cursor.to_list(length=limit)
+        query = {
+            "$or": [
+                {"truck_id": asset_id},
+                {"sensor_id": asset_id},
+            ],
+            "created_at": {"$gte": cutoff},
+        }
+        docs = list(coll.find(
+            query,
+            {"_id": 0, "created_at": 1, "temperature_c": 1, "humidity_pct": 1},
+            sort=[("created_at", 1)],
+        ).limit(limit))
         for d in docs:
-            if hasattr(d.get("timestamp"), "isoformat"):
-                d["timestamp"] = d["timestamp"].isoformat()
+            if hasattr(d.get("created_at"), "isoformat"):
+                d["timestamp"] = d.pop("created_at").isoformat()
+            if "temperature_c" in d:
+                d["temperature"] = d.pop("temperature_c")
+            if "humidity_pct" in d:
+                d["humidity"] = d.pop("humidity_pct")
         return docs
 
-    async def get_door_events(self, asset_id: str, hours: int = 24):
-        """
-        Derive door open/close events from telemetry transitions.
-        Returns list of {timestamp, event_type, duration_seconds}.
-        """
+    def get_door_events(self, asset_id: str, hours: int = 24):
+        """Derive door open/close events from telemetry transitions."""
         from datetime import datetime, timezone, timedelta
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         coll = self.db["telemetry"]
-        cursor = coll.find(
-            {"asset_id": asset_id, "timestamp": {"$gte": cutoff}},
-            {"_id": 0, "timestamp": 1, "door_open": 1},
-            sort=[("timestamp", 1)],
-        )
-        docs = await cursor.to_list(length=5000)
+        query = {
+            "$or": [{"truck_id": asset_id}, {"sensor_id": asset_id}],
+            "created_at": {"$gte": cutoff},
+        }
+        docs = list(coll.find(
+            query,
+            {"_id": 0, "created_at": 1, "door_open": 1},
+            sort=[("created_at", 1)],
+        ))
         events = []
-        prev_open = None
-        prev_ts = None
+        prev_open, prev_ts = None, None
         for d in docs:
             cur_open = d.get("door_open", False)
-            cur_ts = d.get("timestamp")
+            cur_ts = d.get("created_at")
             if prev_open is not None and cur_open != prev_open:
                 event_type = "open" if cur_open else "close"
                 duration = 0
-                if event_type == "close" and prev_ts:
+                if event_type == "close" and prev_ts and cur_ts:
                     try:
-                        if hasattr(cur_ts, "timestamp"):
-                            duration = int((cur_ts - prev_ts).total_seconds())
+                        duration = int((cur_ts - prev_ts).total_seconds())
                     except Exception:
                         pass
                 ts_str = cur_ts.isoformat() if hasattr(cur_ts, "isoformat") else str(cur_ts)
@@ -152,33 +160,31 @@ class MongoDBClient:
             prev_ts = cur_ts
         return events
 
-    async def get_compressor_events(self, asset_id: str, hours: int = 24):
-        """
-        Derive compressor on/off events from telemetry transitions.
-        Returns list of {timestamp, event_type, duration_seconds}.
-        """
+    def get_compressor_events(self, asset_id: str, hours: int = 24):
+        """Derive compressor on/off events from telemetry transitions."""
         from datetime import datetime, timezone, timedelta
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         coll = self.db["telemetry"]
-        cursor = coll.find(
-            {"asset_id": asset_id, "timestamp": {"$gte": cutoff}},
-            {"_id": 0, "timestamp": 1, "compressor_on": 1},
-            sort=[("timestamp", 1)],
-        )
-        docs = await cursor.to_list(length=5000)
+        query = {
+            "$or": [{"truck_id": asset_id}, {"sensor_id": asset_id}],
+            "created_at": {"$gte": cutoff},
+        }
+        docs = list(coll.find(
+            query,
+            {"_id": 0, "created_at": 1, "compressor_running": 1},
+            sort=[("created_at", 1)],
+        ))
         events = []
-        prev_on = None
-        prev_ts = None
+        prev_on, prev_ts = None, None
         for d in docs:
-            cur_on = d.get("compressor_on", True)
-            cur_ts = d.get("timestamp")
+            cur_on = d.get("compressor_running", True)
+            cur_ts = d.get("created_at")
             if prev_on is not None and cur_on != prev_on:
                 event_type = "on" if cur_on else "off"
                 duration = 0
-                if event_type == "on" and prev_ts:
+                if event_type == "on" and prev_ts and cur_ts:
                     try:
-                        if hasattr(cur_ts, "timestamp"):
-                            duration = int((cur_ts - prev_ts).total_seconds())
+                        duration = int((cur_ts - prev_ts).total_seconds())
                     except Exception:
                         pass
                 ts_str = cur_ts.isoformat() if hasattr(cur_ts, "isoformat") else str(cur_ts)
@@ -187,38 +193,46 @@ class MongoDBClient:
             prev_ts = cur_ts
         return events
 
-    async def get_location_history(self, asset_id: str, hours: int = 4, limit: int = 200):
-        """Return GPS trail for trucks (lat/lng/speed/timestamp)."""
+    def get_location_history(self, asset_id: str, hours: int = 4, limit: int = 200):
+        """Return GPS trail for trucks."""
         from datetime import datetime, timezone, timedelta
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         coll = self.db["telemetry"]
-        cursor = coll.find(
-            {
-                "asset_id": asset_id,
-                "timestamp": {"$gte": cutoff},
-                "latitude": {"$exists": True},
-            },
-            {"_id": 0, "timestamp": 1, "latitude": 1, "longitude": 1, "speed": 1},
-            sort=[("timestamp", 1)],
-        ).limit(limit)
-        docs = await cursor.to_list(length=limit)
+        query = {
+            "truck_id": asset_id,
+            "created_at": {"$gte": cutoff},
+            "latitude": {"$exists": True},
+        }
+        docs = list(coll.find(
+            query,
+            {"_id": 0, "created_at": 1, "latitude": 1, "longitude": 1, "speed_kmh": 1},
+            sort=[("created_at", 1)],
+        ).limit(limit))
         for d in docs:
-            if hasattr(d.get("timestamp"), "isoformat"):
-                d["timestamp"] = d["timestamp"].isoformat()
+            if hasattr(d.get("created_at"), "isoformat"):
+                d["timestamp"] = d.pop("created_at").isoformat()
+            if "speed_kmh" in d:
+                d["speed"] = d.pop("speed_kmh")
         return docs
 
-    async def get_asset_alerts(self, asset_id: str, hours: int = 24):
+    def get_asset_alerts(self, asset_id: str, hours: int = 24):
         """Return alert documents for a single asset, newest first."""
         from datetime import datetime, timezone, timedelta
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         coll = self.db["alerts"]
-        cursor = coll.find(
-            {"asset_id": asset_id, "timestamp": {"$gte": cutoff}},
+        docs = list(coll.find(
+            {"asset_id": asset_id, "created_at": {"$gte": cutoff}},
             {"_id": 0},
-            sort=[("timestamp", -1)],
-        ).limit(500)
-        docs = await cursor.to_list(length=500)
+            sort=[("created_at", -1)],
+        ).limit(500))
         for d in docs:
-            if hasattr(d.get("timestamp"), "isoformat"):
-                d["timestamp"] = d["timestamp"].isoformat()
+            for key in ["created_at", "detected_at"]:
+                if hasattr(d.get(key), "isoformat"):
+                    d[key] = d[key].isoformat()
+            if "anomaly" in d and "severity" not in d:
+                d["severity"] = d["anomaly"].get("severity", "INFO")
+            if "anomaly" in d and "message" not in d:
+                d["message"] = d["anomaly"].get("message", d["anomaly"].get("type", "Alert"))
+            if "created_at" in d and "timestamp" not in d:
+                d["timestamp"] = d["created_at"]
         return docs
