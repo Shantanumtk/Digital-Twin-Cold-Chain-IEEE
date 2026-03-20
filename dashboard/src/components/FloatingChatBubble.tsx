@@ -47,14 +47,14 @@ export default function FloatingChatBubble() {
     <>
       {/* Bubble trigger */}
       <button onClick={() => setOpen(o => !o)}
-        className="fixed bottom-6 left-6 z-50 w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-500
+        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-500
           shadow-lg flex items-center justify-center text-2xl transition-transform hover:scale-110">
         {open ? '✕' : '🤖'}
       </button>
 
       {/* Chat panel */}
       {open && (
-        <div className="fixed bottom-24 left-6 z-50 w-80 max-h-[60vh] flex flex-col
+        <div className="fixed bottom-24 right-6 z-50 w-80 max-h-[60vh] flex flex-col
           bg-gray-900 rounded-2xl shadow-2xl border border-gray-700 overflow-hidden">
 
           {/* Header */}

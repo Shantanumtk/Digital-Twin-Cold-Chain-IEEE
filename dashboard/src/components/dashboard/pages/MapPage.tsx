@@ -47,7 +47,7 @@ function truckIconSVG(color: string, moving: boolean): string {
     ${pulse}
     <text x="20" y="26" text-anchor="middle" font-size="16">🚛</text>
   </svg>`;
-  return "data:image/svg+xml;base64," + btoa(svg);
+  return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
 }
 
 async function initLeaflet(el: HTMLDivElement, center: [number, number], zoom: number) {

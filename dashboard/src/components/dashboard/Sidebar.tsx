@@ -82,11 +82,11 @@ export default function Sidebar({ activePage, onPageChange }: SidebarProps) {
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: 12, flexShrink: 0, cursor: "pointer",
         }}
-          onClick={() => signOut({ callbackUrl: "/login" })}
+          onClick={() => signOut({ callbackUrl: `${window.location.origin}/login` })}
           title="Logout"
         >👤</div>
         {expanded && (
-          <div style={{ cursor: "pointer" }} onClick={() => signOut({ callbackUrl: "/login" })}>
+          <div style={{ cursor: "pointer" }} onClick={() => signOut({ callbackUrl: `${window.location.origin}/login` })}>
             <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>Admin</div>
             <div style={{ fontSize: 11, color: theme.dim }}>Click to logout</div>
           </div>
