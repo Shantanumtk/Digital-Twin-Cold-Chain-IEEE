@@ -464,7 +464,7 @@ function FleetStatus({ assets, trucks, rooms, tick }: { assets: Asset[]; trucks:
       )}
       <div style={{ fontSize: 12, fontWeight: 600, color: theme.accent, marginBottom: 8 }}>Normal</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 10 }}>
-        {assets.filter(a => a.state === "NORMAL").map(a => <AssetSimCard key={a.asset_id} asset={a} tick={tick} />)}
+        {assets.filter(a => a.state === "NORMAL").map(a => <AssetSimCard key={a.asset_id} asset={a} tick={tick} selected={false} onSelect={() => {}} />)}
       </div>
     </div>
   );
