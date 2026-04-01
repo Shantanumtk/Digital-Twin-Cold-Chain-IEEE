@@ -18,7 +18,7 @@ export default function FloatingChat() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMsg, type: "query" }),
+        body: JSON.stringify({ message: userMsg, agent: "query" }),
       });
       const data = await res.json();
       setMsgs(p => [...p, { role: "ai", text: data.response || "No response received." }]);

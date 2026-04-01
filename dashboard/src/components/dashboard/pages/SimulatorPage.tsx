@@ -74,14 +74,33 @@ const LOG_COLORS: Record<string, string> = {
 interface LogEntry { time: string; type: "info" | "warning" | "error" | "system"; msg: string; }
 
 export default function SimulatorPage({ subNav }: { subNav: number }) {
-  const [msgs, setMsgs]         = useState<Message[]>([{ role: "ai", text: "Simulator ready. Type a command or pick a scenario to begin." }]);
+  const [msgs, setMsgs]         = useState<Message[]>(() => {
+    try {
+      const saved = sessionStorage.getItem("sim_msgs");
+      return saved ? JSON.parse(saved) : [{ role: "ai", text: "Simulator ready. Type a command or pick a scenario to begin." }];
+    } catch { return [{ role: "ai", text: "Simulator ready. Type a command or pick a scenario to begin." }]; }
+  });
   const [input, setInput]       = useState("");
   const [loading, setLoading]   = useState(false);
   const [assets, setAssets]     = useState<Asset[]>([]);
-  const [logs, setLogs]         = useState<LogEntry[]>([]);
+  const [logs, setLogs]         = useState<LogEntry[]>(() => {
+    try {
+      const saved = sessionStorage.getItem("sim_logs");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [activeScenario, setActiveScenario] = useState<string | null>(null);
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const tick                    = useTick(100);
   const bottomRef               = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    try { sessionStorage.setItem("sim_msgs", JSON.stringify(msgs.slice(-50))); } catch {}
+  }, [msgs]);
+
+  useEffect(() => {
+    try { sessionStorage.setItem("sim_logs", JSON.stringify(logs.slice(-100))); } catch {}
+  }, [logs]);
   const logBottomRef            = useRef<HTMLDivElement>(null);
 
   const addLog = useCallback((type: LogEntry["type"], msg: string) => {
@@ -281,7 +300,13 @@ export default function SimulatorPage({ subNav }: { subNav: number }) {
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 10 }}>
             {assets.map(a => (
-              <AssetSimCard key={a.asset_id} asset={a} tick={tick} />
+              <AssetSimCard
+                key={a.asset_id}
+                asset={a}
+                tick={tick}
+                selected={selectedAssetId === a.asset_id}
+                onSelect={() => setSelectedAssetId(prev => prev === a.asset_id ? null : a.asset_id)}
+              />
             ))}
           </div>
         )}
@@ -296,16 +321,24 @@ export default function SimulatorPage({ subNav }: { subNav: number }) {
 }
 
 /* ── Asset card with animated diagram ── */
-function AssetSimCard({ asset: a, tick }: { asset: Asset; tick: number }) {
+function AssetSimCard({ asset: a, tick, selected, onSelect }: { asset: Asset; tick: number; selected: boolean; onSelect: () => void }) {
   const col = stateColor(a.state);
   const isTruck = a.asset_type === "refrigerated_truck";
 
   return (
-    <div style={{
-      background: theme.card,
-      border: `1px solid ${a.state === "CRITICAL" ? "rgba(239,68,68,0.25)" : a.state === "WARNING" ? "rgba(245,158,11,0.15)" : theme.border}`,
-      borderRadius: 12, overflow: "hidden", position: "relative",
-    }}>
+    <div
+      onClick={onSelect}
+      style={{
+        background: theme.card,
+        border: selected
+          ? `2px solid ${stateColor(a.state)}`
+          : `1px solid ${a.state === "CRITICAL" ? "rgba(239,68,68,0.25)" : a.state === "WARNING" ? "rgba(245,158,11,0.15)" : theme.border}`,
+        borderRadius: 12, overflow: "hidden", position: "relative",
+        cursor: "pointer",
+        boxShadow: selected ? `0 0 0 3px ${stateColor(a.state)}22` : "none",
+        transition: "box-shadow 0.15s, border 0.15s",
+      }}
+    >
       {a.state === "CRITICAL" && (
         <div style={{
           position: "absolute", top: 0, left: 0, right: 0, height: 2,
@@ -417,7 +450,7 @@ function FleetStatus({ assets, trucks, rooms, tick }: { assets: Asset[]; trucks:
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: theme.critical, marginBottom: 8 }}>Critical — immediate action required</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 10 }}>
-            {critical.map(a => <AssetSimCard key={a.asset_id} asset={a} tick={tick} />)}
+            {critical.map(a => <AssetSimCard key={a.asset_id} asset={a} tick={tick} selected={false} onSelect={() => {}} />)}
           </div>
         </div>
       )}
@@ -425,7 +458,7 @@ function FleetStatus({ assets, trucks, rooms, tick }: { assets: Asset[]; trucks:
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: theme.warning, marginBottom: 8 }}>Warning</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 10 }}>
-            {warning.map(a => <AssetSimCard key={a.asset_id} asset={a} tick={tick} />)}
+            {warning.map(a => <AssetSimCard key={a.asset_id} asset={a} tick={tick} selected={false} onSelect={() => {}} />)}
           </div>
         </div>
       )}

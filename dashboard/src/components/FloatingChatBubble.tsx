@@ -29,10 +29,10 @@ export default function FloatingChatBubble() {
     setInput('');
     setLoading(true);
     try {
-      const r = await fetch('/api/chat/query', {
+      const r = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, conversation_id: convId }),
+        body: JSON.stringify({ message: text, conversation_id: convId, agent: 'query' }),
       });
       const d = await r.json();
       setMsgs(prev => [...prev, { role: 'assistant', content: d.response ?? 'No response' }]);
