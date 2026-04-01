@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSession } from "next-auth/react";
 import { theme } from "@/lib/theme";
 import { SIDEBAR_ITEMS, PageKey } from "@/lib/types";
 import { signOut } from "next-auth/react";
@@ -12,6 +13,10 @@ interface SidebarProps {
 
 export default function Sidebar({ activePage, onPageChange }: SidebarProps) {
   const [expanded, setExpanded] = useState(false);
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "admin" || (session?.user?.name === "admin");
+
+  const visibleItems = SIDEBAR_ITEMS.filter(item => !item.adminOnly || isAdmin);
 
   return (
     <div
@@ -43,7 +48,7 @@ export default function Sidebar({ activePage, onPageChange }: SidebarProps) {
 
       {/* Nav Items */}
       <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
-        {SIDEBAR_ITEMS.map((item) => (
+        {visibleItems.map((item) => (
           <div
             key={item.key}
             onClick={() => onPageChange(item.key)}
@@ -58,7 +63,16 @@ export default function Sidebar({ activePage, onPageChange }: SidebarProps) {
             }}
           >
             <span style={{ fontSize: 20, flexShrink: 0 }}>{item.icon}</span>
-            {expanded && <span style={{ fontSize: 14, fontWeight: 500, whiteSpace: "nowrap" }}>{item.label}</span>}
+            {expanded && (
+              <span style={{ fontSize: 14, fontWeight: 500, whiteSpace: "nowrap" }}>
+                {item.label}
+                {item.adminOnly && (
+                  <span style={{ marginLeft: 6, fontSize: 9, background: "rgba(139,92,246,0.2)", color: "#8b5cf6", padding: "1px 5px", borderRadius: 3 }}>
+                    admin
+                  </span>
+                )}
+              </span>
+            )}
             {item.badge && (
               <span style={{
                 position: "absolute", top: expanded ? 7 : 5, right: expanded ? 8 : 8,
@@ -87,7 +101,10 @@ export default function Sidebar({ activePage, onPageChange }: SidebarProps) {
         >👤</div>
         {expanded && (
           <div style={{ cursor: "pointer" }} onClick={() => signOut({ callbackUrl: `${window.location.origin}/login` })}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>Admin</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>
+              {session?.user?.name || "Admin"}
+              {isAdmin && <span style={{ marginLeft: 6, fontSize: 9, background: "rgba(139,92,246,0.2)", color: "#8b5cf6", padding: "1px 5px", borderRadius: 3 }}>admin</span>}
+            </div>
             <div style={{ fontSize: 11, color: theme.dim }}>Click to logout</div>
           </div>
         )}

@@ -12,6 +12,7 @@ import RoomsPage from "@/components/dashboard/pages/RoomsPage";
 import dynamic from "next/dynamic";
 const MapPage = dynamic(() => import("@/components/dashboard/pages/MapPage"), { ssr: false });
 import AlertsPage from "@/components/dashboard/pages/AlertsPage";
+import SimulatorPage from "@/components/dashboard/pages/SimulatorPage";
 import SettingsPage from "@/components/dashboard/pages/SettingsPage";
 import FloatingChat from "@/components/dashboard/FloatingChat";
 import DetailModal from "@/components/AssetDetailModal";
@@ -117,6 +118,8 @@ export default function HomePage() {
         return <MapPage assets={assets} trucks={trucks} />;
       case "alerts":
         return <AlertsPage subNav={subNav} alerts={alerts} />;
+      case "simulator":
+        return <SimulatorPage subNav={subNav} />;
       case "settings":
         return <SettingsPage subNav={subNav} />;
       default:

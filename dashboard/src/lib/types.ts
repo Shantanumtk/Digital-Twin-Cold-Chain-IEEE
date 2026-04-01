@@ -36,14 +36,14 @@ export interface StatsData {
   active_alerts: number;
 }
 
-export type PageKey = "dashboard" | "monitor" | "fleet" | "rooms" | "map" | "alerts" | "settings";
-
+export type PageKey = "dashboard" | "monitor" | "fleet" | "rooms" | "map" | "alerts" | "simulator" | "settings";
 
 export interface SidebarItem {
   icon: string;
   label: string;
   key: PageKey;
   badge?: boolean;
+  adminOnly?: boolean;
 }
 
 export const SIDEBAR_ITEMS: SidebarItem[] = [
@@ -53,16 +53,17 @@ export const SIDEBAR_ITEMS: SidebarItem[] = [
   { icon: "🏭", label: "Cold Rooms", key: "rooms" },
   { icon: "🗺", label: "Live Map", key: "map" },
   { icon: "⚠", label: "Alerts", key: "alerts", badge: true },
+  { icon: "🎮", label: "Simulator", key: "simulator", adminOnly: true },
   { icon: "⚙", label: "Settings", key: "settings" },
 ];
 
-
 export const SUB_NAV_MAP: Record<PageKey, string[]> = {
-  dashboard: ["Overview", "Fleet Summary", "Room Summary", "System Health"],
-  monitor: ["All Assets", "Trucks Only", "Rooms Only", "Critical"],
-  fleet: ["All Trucks", "Active Routes", "Maintenance", "Performance"],
-  rooms: ["All Rooms", "Site Overview", "Temp Map", "Compliance"],
-  map: ["Live Tracking", "Route History", "Geofences", "Heatmap"],
-  alerts: ["Active", "History", "Rules", "Escalations"],
-  settings: ["General", "Profiles", "Notifications", "Users"],
+  dashboard:  ["Overview", "Fleet Summary", "Room Summary", "System Health"],
+  monitor:    ["All Assets", "Trucks Only", "Rooms Only", "Critical"],
+  fleet:      ["All Trucks", "Active Routes", "Maintenance", "Performance"],
+  rooms:      ["All Rooms", "Site Overview", "Temp Map", "Compliance"],
+  map:        ["Live Tracking", "Route History", "Geofences", "Heatmap"],
+  alerts:     ["Active", "History", "Rules", "Escalations"],
+  simulator:  ["Command Center", "Scenario Library", "Fleet Status", "Logs"],
+  settings:   ["General", "Profiles", "Notifications", "Users"],
 };
