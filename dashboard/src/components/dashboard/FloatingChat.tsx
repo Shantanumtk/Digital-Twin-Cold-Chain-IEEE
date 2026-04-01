@@ -30,7 +30,7 @@ export default function FloatingChat() {
   if (!open) {
     return (
       <div onClick={() => setOpen(true)} style={{
-        position: "fixed", bottom: 24, left: 80,
+        position: "fixed", bottom: 24, right: 24,
         width: 50, height: 50, borderRadius: "50%",
         background: `linear-gradient(135deg, ${theme.accent}, #059669)`,
         display: "flex", alignItems: "center", justifyContent: "center",
@@ -42,7 +42,7 @@ export default function FloatingChat() {
 
   return (
     <div style={{
-      position: "fixed", bottom: 24, left: 80,
+      position: "fixed", bottom: 24, right: 24,
       width: 370, height: 460, borderRadius: 16,
       background: theme.card, border: `1px solid ${theme.border}`,
       display: "flex", flexDirection: "column", zIndex: 999,

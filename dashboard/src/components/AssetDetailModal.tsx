@@ -143,7 +143,15 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 function fmtTime(iso: string) {
-  try { return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+  try {
+    // MongoDB timestamps have no tz suffix — treat as UTC by appending Z
+    const normalized = iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z';
+    return new Date(normalized).toLocaleTimeString('en-US', {
+      hour: '2-digit', minute: '2-digit',
+      hour12: true,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
+  }
   catch { return iso; }
 }
 

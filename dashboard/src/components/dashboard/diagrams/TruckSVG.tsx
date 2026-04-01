@@ -45,7 +45,7 @@ export default function TruckSVG({ asset: a, tick }: Props) {
       ))}
 
       {/* Status LED */}
-      <circle cx="325" cy="72" r="4" fill={col}>
+      <circle cx="312" cy="77" r="4" fill={col}>
         {a.state !== "NORMAL" && <animate attributeName="opacity" values="1;0.3;1" dur="1.5s" repeatCount="indefinite" />}
       </circle>
 
@@ -81,7 +81,7 @@ export default function TruckSVG({ asset: a, tick }: Props) {
           )}
           <circle cx="0" cy="0" r="2.5" fill={a.compressor_running ? theme.accent : theme.critical} />
         </g>
-        <text x="6" y="32" textAnchor="middle" fontSize="7" fill={a.compressor_running ? theme.accent : theme.critical} fontFamily="monospace" fontWeight="600">
+        <text x="6" y="42" textAnchor="middle" fontSize="7" fill={a.compressor_running ? theme.accent : theme.critical} fontFamily="monospace" fontWeight="600">
           {a.compressor_running ? "ON" : "OFF"}
         </text>
       </g>

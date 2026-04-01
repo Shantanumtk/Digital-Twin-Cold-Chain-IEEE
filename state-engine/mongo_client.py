@@ -66,23 +66,41 @@ class MongoDBClient:
         acknowledged: Optional[bool] = None,
         limit: int = 100
     ) -> List[dict]:
-        """Get alerts from MongoDB"""
+        """Get alerts from MongoDB — deduplicated by asset_id + anomaly type."""
         try:
             since = datetime.now(timezone.utc) - timedelta(hours=hours)
             query = {"created_at": {"$gte": since}}
-            
+
             if asset_id:
                 query["asset_id"] = asset_id
-            
+
             if acknowledged is not None:
                 query["acknowledged"] = acknowledged
-            
-            cursor = self.db.alerts.find(
-                query,
-                {"_id": 0}
-            ).sort("created_at", -1).limit(limit)
-            
-            return list(cursor)
+
+            # Aggregate: latest alert per asset_id + anomaly.type
+            pipeline = [
+                {"$match": query},
+                {"$sort": {"created_at": -1}},
+                {"$group": {
+                    "_id": {
+                        "asset_id": "$asset_id",
+                        "type": "$anomaly.type"
+                    },
+                    "doc": {"$first": "$$ROOT"}
+                }},
+                {"$replaceRoot": {"newRoot": "$doc"}},
+                {"$sort": {"created_at": -1}},
+                {"$limit": limit},
+                {"$project": {"_id": 0}},
+            ]
+
+            docs = list(self.db.alerts.aggregate(pipeline))
+            # Serialize datetimes
+            for d in docs:
+                for key in ["created_at", "detected_at"]:
+                    if hasattr(d.get(key), "isoformat"):
+                        d[key] = d[key].isoformat()
+            return docs
         except Exception as e:
             logger.error(f"Failed to get alerts: {e}")
             return []
@@ -120,7 +138,8 @@ class MongoDBClient:
         ).limit(limit))
         for d in docs:
             if hasattr(d.get("created_at"), "isoformat"):
-                d["timestamp"] = d.pop("created_at").isoformat()
+                dt = d.pop("created_at")
+                d["timestamp"] = dt.isoformat() + ("Z" if dt.tzinfo is None else "")
             if "temperature_c" in d:
                 d["temperature"] = d.pop("temperature_c")
             if "humidity_pct" in d:
@@ -210,7 +229,8 @@ class MongoDBClient:
         ).limit(limit))
         for d in docs:
             if hasattr(d.get("created_at"), "isoformat"):
-                d["timestamp"] = d.pop("created_at").isoformat()
+                dt = d.pop("created_at")
+                d["timestamp"] = dt.isoformat() + ("Z" if dt.tzinfo is None else "")
             if "speed_kmh" in d:
                 d["speed"] = d.pop("speed_kmh")
         return docs

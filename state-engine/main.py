@@ -132,13 +132,20 @@ def process_telemetry(telemetry: dict):
     # Store in Redis
     redis_client.set_asset_state(asset_id, state_doc)
 
-    # Handle alerts
-    if state_result["state"] in ["WARNING", "CRITICAL"]:
-        redis_client.set_active_alert(asset_id, {
-            "state": state_result["state"],
-            "reasons": state_result["reasons"],
-            "temperature_c": telemetry.get("temperature_c")
-        })
+    # Handle alerts — only on state transition to avoid alert flood
+    previous = redis_client.get_asset_state(asset_id) or {}
+    previous_state = previous.get("state", "NORMAL")
+    current_state = state_result["state"]
+
+    if current_state in ["WARNING", "CRITICAL"]:
+        if previous_state != current_state:
+            # State changed — fire a new alert
+            redis_client.set_active_alert(asset_id, {
+                "state": current_state,
+                "reasons": state_result["reasons"],
+                "temperature_c": telemetry.get("temperature_c")
+            })
+        # else: same state, keep existing alert, don't flood
     else:
         redis_client.clear_alert(asset_id)
 

@@ -79,9 +79,9 @@ export default function HomePage() {
         const rawAlerts = Array.isArray(alertsRes) ? alertsRes : alertsRes.alerts || [];
         setAlerts(rawAlerts.map((al: any) => ({
           ...al,
-          severity: al.severity ?? al.level ?? al.sev ?? "INFO",
-          message: al.message ?? al.msg ?? al.description ?? "Alert",
-          timestamp: al.timestamp ?? al.created_at ?? al.time ?? null,
+          severity: al.anomaly?.severity === "HIGH" ? "CRITICAL" : al.anomaly?.severity === "MEDIUM" ? "WARNING" : al.anomaly?.severity === "LOW" ? "INFO" : al.severity ?? "INFO",
+          message: al.anomaly?.message ?? al.message ?? "Alert",
+          timestamp: al.detected_at ?? al.created_at ?? null,
         })));
       }
     };
