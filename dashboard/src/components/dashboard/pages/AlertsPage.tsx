@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { theme } from "@/lib/theme";
 import { Card, Badge, Mono, StatCard } from "../UIComponents";
 
