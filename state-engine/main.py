@@ -133,12 +133,13 @@ def process_telemetry(telemetry: dict):
             "speed_kmh": telemetry.get("speed_kmh")
         }
 
+    # Read previous state BEFORE overwriting
+    previous = redis_client.get_asset_state(asset_id) or {}
+    previous_state = previous.get("state", "NORMAL")
     # Store in Redis
     redis_client.set_asset_state(asset_id, state_doc)
 
     # Handle alerts — only on state transition to avoid alert flood
-    previous = redis_client.get_asset_state(asset_id) or {}
-    previous_state = previous.get("state", "NORMAL")
     current_state = state_result["state"]
 
     if current_state in ["WARNING", "CRITICAL"]:
