@@ -1,5 +1,4 @@
 export const dynamic = "force-dynamic";
-
 import { NextResponse } from "next/server";
 import { MongoClient } from "mongodb";
 import bcrypt from "bcryptjs";
@@ -19,16 +18,17 @@ export async function GET() {
     await users.createIndex({ username: 1 }, { unique: true });
     await users.createIndex({ email: 1 }, { unique: true });
 
+    // Admin user
     const adminExists = await users.findOne({ username: ADMIN_USER });
-    if (adminExists)
-      return NextResponse.json({ message: "Admin already exists", seeded: false });
+    if (!adminExists) {
+      const hashedPassword = await bcrypt.hash(ADMIN_PASSWORD, 12);
+      await users.insertOne({
+        username: ADMIN_USER, email: ADMIN_EMAIL, password: hashedPassword,
+        role: "admin", createdAt: new Date(), lastLogin: null,
+      });
+    }
 
-    const hashedPassword = await bcrypt.hash(ADMIN_PASSWORD, 12);
-    await users.insertOne({
-      username: ADMIN_USER, email: ADMIN_EMAIL, password: hashedPassword,
-      role: "admin", createdAt: new Date(), lastLogin: null,
-    });
-    // Create operator user
+    // Operator user
     const operatorExists = await users.findOne({ username: "operator" });
     if (!operatorExists) {
       const operatorPassword = await bcrypt.hash("operator123", 12);
@@ -42,10 +42,10 @@ export async function GET() {
       });
     }
 
-    return NextResponse.json({ message: "Admin and operator users created", seeded: true });
+    return NextResponse.json({ message: "Users seeded", seeded: true });
   } catch (error) {
     console.error("Seed error:", error);
-    return NextResponse.json({ error: "Failed to seed admin user" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to seed users" }, { status: 500 });
   } finally {
     if (client) await client.close();
   }
