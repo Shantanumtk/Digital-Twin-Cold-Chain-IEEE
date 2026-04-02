@@ -28,7 +28,21 @@ export async function GET() {
       username: ADMIN_USER, email: ADMIN_EMAIL, password: hashedPassword,
       role: "admin", createdAt: new Date(), lastLogin: null,
     });
-    return NextResponse.json({ message: "Admin user created", seeded: true });
+    // Create operator user
+    const operatorExists = await users.findOne({ username: "operator" });
+    if (!operatorExists) {
+      const operatorPassword = await bcrypt.hash("operator123", 12);
+      await users.insertOne({
+        username: "operator",
+        email: "operator@coldchain.local",
+        password: operatorPassword,
+        role: "operator",
+        createdAt: new Date(),
+        lastLogin: null,
+      });
+    }
+
+    return NextResponse.json({ message: "Admin and operator users created", seeded: true });
   } catch (error) {
     console.error("Seed error:", error);
     return NextResponse.json({ error: "Failed to seed admin user" }, { status: 500 });

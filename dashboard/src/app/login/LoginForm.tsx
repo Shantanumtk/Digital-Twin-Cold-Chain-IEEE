@@ -102,7 +102,10 @@ export default function LoginForm() {
             </p>
           </div>
         </div>
-        <p className="text-center text-white/20 text-xs mt-6">Default: admin / coldchain2026</p>
+        <div className="text-center text-white/20 text-xs mt-6 space-y-1">
+          <p>Admin: admin / coldchain2026</p>
+          <p>Operator: operator / operator123</p>
+        </div>
       </div>
     </div>
   );
