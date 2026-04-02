@@ -7,6 +7,7 @@ import { Badge, Mono, Card } from "../UIComponents";
 import { useTick } from "@/hooks/useTick";
 import TruckSVG from "../diagrams/TruckSVG";
 import RoomSVG from "../diagrams/RoomSVG";
+import AssetDetailModal from "@/components/AssetDetailModal";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -91,6 +92,7 @@ export default function SimulatorPage({ subNav }: { subNav: number }) {
   });
   const [activeScenario, setActiveScenario] = useState<string | null>(null);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [modalAssetId, setModalAssetId] = useState<string | null>(null);
   const tick                    = useTick(100);
   const bottomRef               = useRef<HTMLDivElement>(null);
 
@@ -306,11 +308,19 @@ export default function SimulatorPage({ subNav }: { subNav: number }) {
                 tick={tick}
                 selected={selectedAssetId === a.asset_id}
                 onSelect={() => setSelectedAssetId(prev => prev === a.asset_id ? null : a.asset_id)}
+                onDoubleClick={() => setModalAssetId(a.asset_id)}
               />
             ))}
           </div>
         )}
       </div>
+
+      {modalAssetId && (
+        <AssetDetailModal
+          assetId={modalAssetId}
+          onClose={() => setModalAssetId(null)}
+        />
+      )}
 
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -321,13 +331,14 @@ export default function SimulatorPage({ subNav }: { subNav: number }) {
 }
 
 /* ── Asset card with animated diagram ── */
-function AssetSimCard({ asset: a, tick, selected, onSelect }: { asset: Asset; tick: number; selected: boolean; onSelect: () => void }) {
+function AssetSimCard({ asset: a, tick, selected, onSelect, onDoubleClick }: { asset: Asset; tick: number; selected: boolean; onSelect: () => void; onDoubleClick?: () => void }) {
   const col = stateColor(a.state);
   const isTruck = a.asset_type === "refrigerated_truck";
 
   return (
     <div
       onClick={onSelect}
+      onDoubleClick={onDoubleClick}
       style={{
         background: theme.card,
         border: selected
@@ -347,7 +358,7 @@ function AssetSimCard({ asset: a, tick, selected, onSelect }: { asset: Asset; ti
         }} />
       )}
 
-      <div style={{ padding: "10px 14px 4px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ padding: "10px 14px 4px", display: "flex", justifyContent: "space-between", alignItems: "center" }} title="Double-click to open full detail">
         <div style={{ fontSize: 14, fontWeight: 700, color: theme.text }}>{a.asset_id}</div>
         <Badge state={a.state} small />
       </div>
