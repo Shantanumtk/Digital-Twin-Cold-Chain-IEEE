@@ -184,10 +184,10 @@ export default function SimulatorPage({ subNav }: { subNav: number }) {
 
   // Default: Command Center (subNav === 0)
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "420px 1fr", gap: 14, height: "calc(100vh - 110px)" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "420px 1fr", gap: 14, height: "calc(100vh - 110px)", overflow: "hidden", alignItems: "start" }}>
 
       {/* ── Left: Chat Panel ── */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, height: "100%", minHeight: 0, overflow: "hidden" }}>
 
         {/* Stats bar */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
@@ -285,7 +285,7 @@ export default function SimulatorPage({ subNav }: { subNav: number }) {
       </div>
 
       {/* ── Right: Live Asset Grid ── */}
-      <div style={{ overflow: "auto" }}>
+      <div style={{ overflow: "auto", height: "100%", minHeight: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, marginBottom: 10 }}>
           Live fleet — updates every 3s
           <span style={{ fontSize: 11, fontWeight: 400, color: theme.dim, marginLeft: 8 }}>
