@@ -199,6 +199,13 @@ function FleetEfficiency({ trucks, rooms, assets }: { trucks: Asset[]; rooms: As
 
 // ─── Sub-nav 2: SLA Compliance ───
 function SLACompliance({ assets }: { assets: Asset[] }) {
+  const [weekAlerts, setWeekAlerts] = useState<any[]>([]);
+  useEffect(() => {
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/alerts?hours=168&limit=500`, { cache: "no-store" })
+      .then(r => r.ok ? r.json() : { alerts: [] })
+      .then(d => setWeekAlerts(Array.isArray(d) ? d : d.alerts || []))
+      .catch(() => {});
+  }, []);
   const normal = assets.filter(a => a.state === "NORMAL").length;
   const warning = assets.filter(a => a.state === "WARNING").length;
   const critical = assets.filter(a => a.state === "CRITICAL").length;
@@ -242,21 +249,43 @@ function SLACompliance({ assets }: { assets: Asset[] }) {
       {/* Incidents chart (7 days) */}
       <Card style={{ padding: 16, marginBottom: 14 }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, marginBottom: 10 }}>Incidents — Last 7 Days</div>
-        <svg viewBox="0 0 500 100" style={{ width: "100%", height: 100 }}>
-          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d, i) => {
-            const w = Math.floor(Math.random() * 3);
-            const c = Math.floor(Math.random() * 2);
-            const barW = 40;
-            const x = 20 + i * 68;
-            return (
-              <g key={d}>
-                <rect x={x} y={90 - w * 14 - c * 14} width={barW} height={w * 14} fill={theme.warning} opacity="0.5" rx="2" />
-                <rect x={x} y={90 - c * 14} width={barW} height={c * 14} fill={theme.critical} opacity="0.5" rx="2" />
-                <text x={x + barW / 2} y="98" textAnchor="middle" fill={theme.dim} fontSize="8">{d}</text>
-              </g>
-            );
-          })}
-        </svg>
+        {(() => {
+          const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+          const now = new Date();
+          const dayBuckets = Array.from({length: 7}, (_, i) => {
+            const d = new Date(now);
+            d.setDate(d.getDate() - (6 - i));
+            return { label: days[d.getDay()], date: d.toDateString(), warn: 0, crit: 0 };
+          });
+          weekAlerts.forEach((a: any) => {
+            const ts = a.detected_at ?? a.created_at;
+            if (!ts) return;
+            const d = new Date(ts.endsWith("Z") ? ts : ts + "Z");
+            const bucket = dayBuckets.find(b => b.date === d.toDateString());
+            if (!bucket) return;
+            const sev = a.anomaly?.severity ?? a.severity ?? "";
+            if (sev === "HIGH" || sev === "CRITICAL") bucket.crit++;
+            else bucket.warn++;
+          });
+          const maxVal = Math.max(1, ...dayBuckets.map(b => b.warn + b.crit));
+          const barW = 40;
+          return (
+            <svg viewBox="0 0 500 100" style={{ width: "100%", height: 100 }}>
+              {dayBuckets.map((b, i) => {
+                const x = 20 + i * 68;
+                const wH = Math.round((b.warn / maxVal) * 70);
+                const cH = Math.round((b.crit / maxVal) * 70);
+                return (
+                  <g key={b.label}>
+                    <rect x={x} y={90 - wH - cH} width={barW} height={wH} fill={theme.warning} opacity="0.5" rx="2" />
+                    <rect x={x} y={90 - cH} width={barW} height={cH} fill={theme.critical} opacity="0.5" rx="2" />
+                    <text x={x + barW / 2} y="98" textAnchor="middle" fill={theme.dim} fontSize="8">{b.label}</text>
+                  </g>
+                );
+              })}
+            </svg>
+          );
+        })()}
         <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 4 }}>
           <span style={{ fontSize: 10, color: theme.warning, display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, background: theme.warning, opacity: 0.5, borderRadius: 2, display: "inline-block" }} />Warnings</span>
           <span style={{ fontSize: 10, color: theme.critical, display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, background: theme.critical, opacity: 0.5, borderRadius: 2, display: "inline-block" }} />Critical</span>

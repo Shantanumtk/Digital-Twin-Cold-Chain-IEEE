@@ -67,40 +67,69 @@ function ActiveAlerts({ alerts }: { alerts: any[] }) {
 }
 
 function AlertHistory() {
-  const history = [
-    { sev: "CRITICAL", msg: "truck03: Compressor failure", time: "Today 14:22", resolved: "14:45", duration: "23 min" },
-    { sev: "WARNING", msg: "site2-room2: Door open 15+ min", time: "Today 12:10", resolved: "12:28", duration: "18 min" },
-    { sev: "CRITICAL", msg: "site3-room3: Temp above 10°C", time: "Today 09:30", resolved: "10:15", duration: "45 min" },
-    { sev: "WARNING", msg: "truck02: Door open at loading", time: "Yesterday 16:45", resolved: "16:52", duration: "7 min" },
-    { sev: "INFO", msg: "System maintenance window", time: "Yesterday 02:00", resolved: "02:30", duration: "30 min" },
-    { sev: "WARNING", msg: "truck01: Fuel below 30%", time: "Mar 17 09:00", resolved: "Mar 17 11:30", duration: "2.5 hrs" },
-    { sev: "CRITICAL", msg: "site1-room1: Compressor stall", time: "Mar 16 22:15", resolved: "Mar 16 22:40", duration: "25 min" },
-    { sev: "INFO", msg: "Firmware update completed", time: "Mar 16 03:00", resolved: "03:00", duration: "—" },
-  ];
+  const [history, setHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [hours, setHours] = useState(24);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/alerts?hours=${hours}&limit=100`, { cache: "no-store" })
+      .then(r => r.ok ? r.json() : { alerts: [] })
+      .then(d => {
+        const raw = Array.isArray(d) ? d : d.alerts || [];
+        setHistory(raw.map((a: any) => ({
+          sev: a.anomaly?.severity === "HIGH" ? "CRITICAL" : a.anomaly?.severity === "MEDIUM" ? "WARNING" : a.severity ?? "INFO",
+          msg: a.anomaly?.message ?? a.message ?? a.alert_type ?? "Alert",
+          asset: a.asset_id ?? "—",
+          time: a.detected_at ?? a.created_at ?? null,
+        })));
+      })
+      .catch(() => setHistory([]))
+      .finally(() => setLoading(false));
+  }, [hours]);
+
+  const fmt = (iso: string) => {
+    try {
+      const d = new Date(iso.endsWith("Z") ? iso : iso + "Z");
+      return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    } catch { return iso; }
+  };
 
   return (
     <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <span style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>Alert History — last {hours}h ({history.length} records)</span>
+        <select value={hours} onChange={e => setHours(Number(e.target.value))}
+          style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 6, padding: "4px 10px", color: theme.text, fontSize: 12 }}>
+          {[6, 12, 24, 48, 72, 168].map(h => <option key={h} value={h}>Last {h}h</option>)}
+        </select>
+      </div>
       <Card style={{ overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-          <thead>
-            <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-              {["Severity", "Message", "Triggered", "Resolved", "Duration"].map(h => (
-                <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 9, fontWeight: 600, color: theme.dim, textTransform: "uppercase" }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {history.map((h, i) => (
-              <tr key={i} style={{ borderBottom: `1px solid ${theme.borderLight}` }}>
-                <td style={{ padding: "10px 12px" }}><Badge state={h.sev} small /></td>
-                <td style={{ padding: "10px 12px", color: theme.text }}>{h.msg}</td>
-                <td style={{ padding: "10px 12px", color: theme.muted }}>{h.time}</td>
-                <td style={{ padding: "10px 12px", color: theme.muted }}>{h.resolved}</td>
-                <td style={{ padding: "10px 12px" }}><Mono size={10}>{h.duration}</Mono></td>
+        {loading ? (
+          <div style={{ padding: 30, textAlign: "center", color: theme.dim }}>Loading...</div>
+        ) : history.length === 0 ? (
+          <div style={{ padding: 30, textAlign: "center", color: theme.dim }}>No alerts in last {hours}h</div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                {["Severity", "Asset", "Message", "Triggered"].map(h => (
+                  <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 9, fontWeight: 600, color: theme.dim, textTransform: "uppercase" }}>{h}</th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {history.map((h, i) => (
+                <tr key={i} style={{ borderBottom: `1px solid ${theme.borderLight}` }}>
+                  <td style={{ padding: "10px 12px" }}><Badge state={h.sev} small /></td>
+                  <td style={{ padding: "10px 12px", color: theme.blue, fontSize: 10 }}>{h.asset}</td>
+                  <td style={{ padding: "10px 12px", color: theme.text }}>{h.msg}</td>
+                  <td style={{ padding: "10px 12px", color: theme.muted }}>{h.time ? fmt(h.time) : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </Card>
     </div>
   );

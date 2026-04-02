@@ -30,6 +30,22 @@ function Toggle({ on, label }: { on: boolean; label: string }) {
 }
 
 function General() {
+  const [health, setHealth] = useState<any>(null);
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const r = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/health`, { cache: "no-store" });
+        if (r.ok) setHealth(await r.json());
+        else setHealth({ status: "unhealthy", redis: false, mongodb: false, kafka_consumer: false });
+      } catch { setHealth({ status: "unreachable", redis: false, mongodb: false, kafka_consumer: false }); }
+    };
+    check();
+    const id = setInterval(check, 10000);
+    return () => clearInterval(id);
+  }, []);
+
+  const svcColor = (ok: boolean | undefined) => ok ? theme.accent : ok === false ? theme.critical : theme.dim;
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
       <Card style={{ padding: 18 }}>
@@ -59,20 +75,27 @@ function General() {
       </Card>
 
       <Card style={{ padding: 18 }}>
-        <div style={{ fontSize: 16, fontWeight: 600, color: theme.text, marginBottom: 14 }}>Data Pipeline Status</div>
+        <div style={{ fontSize: 16, fontWeight: 600, color: theme.text, marginBottom: 14 }}>
+          Data Pipeline Status
+          {health && (
+            <span style={{ marginLeft: 8, fontSize: 10, color: health.status === "healthy" ? theme.accent : theme.critical, background: health.status === "healthy" ? theme.accentDim : theme.criticalDim, padding: "2px 8px", borderRadius: 4 }}>
+              {health.status === "healthy" ? "All systems operational" : health.status}
+            </span>
+          )}
+        </div>
         {[
-          ["MQTT Broker", "Connected", theme.accent],
-          ["Kafka Cluster", "3/3 brokers", theme.accent],
-          ["MongoDB", "Connected", theme.accent],
-          ["Redis Cache", "Connected", theme.accent],
-          ["State Engine", "Healthy", theme.accent],
-          ["MCP Agent", "Online", theme.accent],
-        ].map(([k, v, c]) => (
+          ["MQTT Broker",   true,                         "Publishing telemetry"],
+          ["Kafka Cluster", health?.kafka_consumer,       health?.kafka_consumer ? "Consumer active" : "Consumer down"],
+          ["MongoDB",       health?.mongodb,              health?.mongodb ? "Connected" : "Unreachable"],
+          ["Redis Cache",   health?.redis,                health?.redis ? "Connected" : "Unreachable"],
+          ["State Engine",  health?.status === "healthy", health?.status === "healthy" ? "Healthy" : health?.status ?? "Checking..."],
+          ["MCP Agent",     undefined,                    "External — check agent logs"],
+        ].map(([k, ok, label]) => (
           <div key={k as string} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${theme.borderLight}` }}>
             <span style={{ fontSize: 13, color: theme.muted }}>{k as string}</span>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <div style={{ width: 6, height: 6, borderRadius: "50%", background: c as string }} />
-              <span style={{ fontSize: 10, color: c as string }}>{v as string}</span>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: svcColor(ok as boolean | undefined) }} />
+              <span style={{ fontSize: 10, color: svcColor(ok as boolean | undefined) }}>{label as string}</span>
             </div>
           </div>
         ))}
@@ -107,7 +130,15 @@ function General() {
 }
 
 function Profiles() {
-  const profiles = [
+  const [activeProfile, setActiveProfile] = useState<any>(null);
+  useEffect(() => {
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/profile`, { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setActiveProfile(d); })
+      .catch(() => {});
+  }, []);
+
+  const profiles = activeProfile ? [] : [
     { name: "Frozen Goods", temp_warn: -15, temp_crit: -10, hum_min: 30, hum_max: 60, door_warn: 60, door_crit: 180, assets: 5 },
     { name: "Chilled Goods", temp_warn: 4, temp_crit: 8, hum_min: 40, hum_max: 70, door_warn: 120, door_crit: 300, assets: 2 },
     { name: "Pharma", temp_warn: 2, temp_crit: 5, hum_min: 35, hum_max: 55, door_warn: 30, door_crit: 90, assets: 2 },
@@ -117,11 +148,29 @@ function Profiles() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
-        <span style={{ fontSize: 16, fontWeight: 600, color: theme.text }}>Threshold Profiles</span>
+        <div>
+          <span style={{ fontSize: 16, fontWeight: 600, color: theme.text }}>Threshold Profiles</span>
+          {activeProfile && (
+            <span style={{ marginLeft: 10, fontSize: 11, color: theme.accent, background: theme.accentDim, padding: "2px 8px", borderRadius: 4 }}>
+              Active: {activeProfile.name} · Fleet: {activeProfile.fleet?.trucks ?? "?"} trucks, {activeProfile.fleet?.cold_rooms ?? "?"} rooms
+            </span>
+          )}
+        </div>
         <div style={{ padding: "6px 14px", borderRadius: 8, background: theme.accent, color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
           + New Profile
         </div>
       </div>
+      {activeProfile && (
+        <Card style={{ padding: 14, marginBottom: 14, borderLeft: `3px solid ${theme.accent}`, borderRadius: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: theme.accent, marginBottom: 6 }}>Active: {activeProfile.name}</div>
+          <div style={{ fontSize: 10, color: theme.dim }}>
+            Fleet: {activeProfile.fleet?.trucks ?? "?"} trucks · {activeProfile.fleet?.cold_rooms ?? "?"} cold rooms
+          </div>
+          <div style={{ fontSize: 10, color: theme.dim, marginTop: 4 }}>
+            Thresholds: {JSON.stringify(activeProfile.asset_defaults ?? {})}
+          </div>
+        </Card>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
         {profiles.map(p => (

@@ -8,6 +8,7 @@ import { useTick } from "@/hooks/useTick";
 import TruckSVG from "../diagrams/TruckSVG";
 import RoomSVG from "../diagrams/RoomSVG";
 import AssetDetailModal from "@/components/AssetDetailModal";
+import AssetDetailModal from "@/components/AssetDetailModal";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
