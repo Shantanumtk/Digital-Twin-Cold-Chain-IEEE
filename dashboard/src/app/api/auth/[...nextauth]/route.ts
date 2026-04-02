@@ -4,7 +4,7 @@ import { MongoClient } from "mongodb";
 import bcrypt from "bcryptjs";
 
 const MONGO_URI = process.env.AUTH_MONGO_URI || process.env.MONGO_URI || "mongodb://localhost:27017";
-const MONGO_DB = process.env.MONGO_DB || "coldchain";
+const MONGO_DB  = process.env.MONGO_DB || "coldchain";
 
 async function getDb() {
   const client = new MongoClient(MONGO_URI, { serverSelectionTimeoutMS: 5000 });
@@ -36,7 +36,12 @@ const handler = NextAuth({
             { _id: user._id },
             { $set: { lastLogin: new Date() } }
           );
-          return { id: user._id.toString(), name: user.username, email: user.email };
+          return {
+            id:    user._id.toString(),
+            name:  user.username,
+            email: user.email,
+            role:  user.role ?? "operator",
+          };
         } catch (error) {
           console.error("Auth error:", error);
           return null;
@@ -50,11 +55,17 @@ const handler = NextAuth({
   session: { strategy: "jwt", maxAge: 24 * 60 * 60 },
   callbacks: {
     async jwt({ token, user }) {
-      if (user) token.username = user.name;
+      if (user) {
+        token.username = user.name;
+        token.role     = (user as any).role ?? "operator";
+      }
       return token;
     },
     async session({ session, token }) {
-      if (session.user) session.user.name = token.username as string;
+      if (session.user) {
+        session.user.name        = token.username as string;
+        (session.user as any).role = token.role as string;
+      }
       return session;
     },
   },

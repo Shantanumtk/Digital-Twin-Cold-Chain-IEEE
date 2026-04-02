@@ -19,6 +19,10 @@ from pydantic import BaseModel
 from confluent_kafka import Consumer
 
 from state_calculator import StateCalculator
+try:
+    from sns_publisher import publish_critical_alert
+except Exception:
+    def publish_critical_alert(*a, **k): pass
 from profile_loader import get_profile_summary, reload_profile
 from redis_client import RedisClient
 from mongo_client import MongoDBClient
@@ -145,6 +149,14 @@ def process_telemetry(telemetry: dict):
                 "reasons": state_result["reasons"],
                 "temperature_c": telemetry.get("temperature_c")
             })
+            if current_state == "CRITICAL":
+                try:
+                    publish_critical_alert(
+                        asset_id=asset_id,
+                        alert_type="STATE_TRANSITION",
+                        message="; ".join(state_result["reasons"]),
+                    )
+                except Exception: pass
         # else: same state, keep existing alert, don't flood
     else:
         redis_client.clear_alert(asset_id)
