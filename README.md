@@ -433,8 +433,7 @@ Control the simulator via natural language:
 ---
 
 ## 👥 Authors
-
-**Shantanu** — DevOps Engineer at Amdocs, MS CS candidate at CSUF  
+  
 GitHub: [@Shantanumtk](https://github.com/Shantanumtk)
 
 ---
