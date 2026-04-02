@@ -156,7 +156,9 @@ def process_telemetry(telemetry: dict):
                         alert_type="STATE_TRANSITION",
                         message="; ".join(state_result["reasons"]),
                     )
-                except Exception: pass
+                    logger.info(f"SNS alert sent for {asset_id}")
+                except Exception as sns_err:
+                    logger.error(f"SNS publish error for {asset_id}: {sns_err}")
         # else: same state, keep existing alert, don't flood
     else:
         redis_client.clear_alert(asset_id)
