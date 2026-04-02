@@ -1,4 +1,5 @@
 "use client";
+import React from "react";
 
 import { useState, useEffect } from "react";
 import { theme } from "@/lib/theme";
@@ -132,7 +133,7 @@ export default function HomePage() {
       <Sidebar activePage={page} onPageChange={handlePageChange} />
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <TopNav page={page} subNav={subNav} onSubNavChange={setSubNav} />
+        <TopNav page={page} subNav={subNav} onSubNavChange={setSubNav} profileName={profileName} />
 
         <div style={{ flex: 1, overflow: "auto", padding: 18 }}>
           {renderPage()}
