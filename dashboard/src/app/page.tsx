@@ -42,8 +42,16 @@ export default function HomePage() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [alerts, setAlerts] = useState<any[]>([]);
+  const [profileName, setProfileName] = useState("frozen-logistics");
 
   // Fetch data on interval
+  useEffect(() => {
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/profile`, { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.name) setProfileName(d.name); })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     const load = async () => {
       const [statsRes, assetsRes, alertsRes] = await Promise.all([

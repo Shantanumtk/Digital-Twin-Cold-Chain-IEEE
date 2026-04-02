@@ -918,7 +918,8 @@ main() {
   build_and_push_images     # Step  6
   push_thirdparty_images    # Step  7
   ensure_namespace          # Step  8
-  apply_configmaps          # Step  9
+  setup_irsa_sns            # Step  9 (IRSA)
+  apply_configmaps          # Step 10
   deploy_stateful_services  # Step 10
   deploy_app_services       # Step 11
   deploy_dashboard          # Step 12
@@ -928,6 +929,61 @@ main() {
   fi
 
   print_summary             # Step 13/14
+}
+
+
+setup_irsa_sns() {
+  log_step "Setup IRSA for State Engine SNS"
+  local SA_NAME="state-engine-sa"
+  local ROLE_NAME="coldchain-state-engine-sns-role"
+  local POLICY_NAME="coldchain-sns-publish"
+  local OIDC_ID=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION" --query "cluster.identity.oidc.issuer" --output text | sed 's|.*/||')
+  local OIDC_PROVIDER="oidc.eks.${AWS_REGION}.amazonaws.com/id/${OIDC_ID}"
+  local POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT}:policy/${POLICY_NAME}"
+
+  # Create IAM role with OIDC trust policy
+  cat > /tmp/trust-policy.json << TRUST
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::${AWS_ACCOUNT}:oidc-provider/${OIDC_PROVIDER}"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "${OIDC_PROVIDER}:sub": "system:serviceaccount:${NAMESPACE}:${SA_NAME}",
+          "${OIDC_PROVIDER}:aud": "sts.amazonaws.com"
+        }
+      }
+    }
+  ]
+}
+TRUST
+
+  aws iam create-role --role-name $ROLE_NAME     --assume-role-policy-document file:///tmp/trust-policy.json     --region $AWS_REGION 2>/dev/null || true
+  aws iam update-assume-role-policy     --role-name $ROLE_NAME     --policy-document file:///tmp/trust-policy.json
+  aws iam attach-role-policy     --role-name $ROLE_NAME     --policy-arn $POLICY_ARN 2>/dev/null || true
+
+  # Create ServiceAccount
+  kubectl apply -f - << YAML
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ${SA_NAME}
+  namespace: ${NAMESPACE}
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::${AWS_ACCOUNT}:role/${ROLE_NAME}
+YAML
+
+  # Inject SNS_TOPIC_ARN env var
+  local SNS_ARN="arn:aws:sns:${AWS_REGION}:${AWS_ACCOUNT}:coldchain-critical-alerts"
+  kubectl set env deployment/state-engine -n "$NAMESPACE"     SNS_TOPIC_ARN="$SNS_ARN" 2>/dev/null || true
+
+  log_done "IRSA setup complete — state engine can publish to SNS"
+  track_step "IRSA SNS" "pass" "ServiceAccount + IAM role configured"
 }
 
 main "$@"
