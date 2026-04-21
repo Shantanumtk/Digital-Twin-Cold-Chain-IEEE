@@ -1,0 +1,17 @@
+{
+  "total_rows": 30000,
+  "total_anomalous": 20000,
+  "anomaly_rate": 0.6666666666666666,
+  "vehicles": 3,
+  "temp_min": -24.999516554424904,
+  "temp_max": 7.999035715948018,
+  "temp_mean": -5.830368036188591,
+  "thresholds": {
+    "temp_critical_c": -10.0,
+    "temp_warning_c": -15.0
+  },
+  "label_distribution": {
+    "CRITICAL": 20000,
+    "NORMAL": 10000
+  }
+}

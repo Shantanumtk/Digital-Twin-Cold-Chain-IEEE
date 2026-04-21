@@ -1,5 +1,9 @@
-# LLM (OpenAI-compatible SDK for KodeKloud proxy)
+# LLM (OpenAI-compatible SDK)
 openai>=1.40.0
+
+# LangGraph — multi-agent StateGraph (Phase 1 rewrite)
+langgraph>=0.2.0
+langchain-core>=0.2.0
 
 # Web framework
 fastapi>=0.115.0
@@ -15,3 +19,4 @@ paho-mqtt>=2.1.0
 python-dotenv>=1.0.0
 httpx>=0.28.0
 pyyaml>=6.0.0
+requests>=2.31.0

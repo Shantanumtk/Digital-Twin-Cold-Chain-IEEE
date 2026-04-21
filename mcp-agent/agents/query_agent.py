@@ -1,245 +1,191 @@
 """
-Query Agent — Answers natural language questions about cold chain data.
-Uses OpenAI-compatible API (KodeKloud proxy to Claude) with tool calling.
+Query Agent — LangGraph StateGraph implementation.
+
+Pipeline (anomaly path):
+  START → supervisor → anomaly_classifier → rca → alert_router → END
+
+Pipeline (status path):
+  START → supervisor → status_query → END
+
+Pipeline (simulation path):
+  START → supervisor → alert_router → END
+
+This is the paper's core contribution: a typed, inspectable, evaluable
+multi-agent pipeline with per-node latency measurement and logged state.
+
+ColdChainState TypedDict means every field at every node boundary is
+loggable — enabling honest P/R/F1 evaluation in eval/harness.py.
 """
 
-import os
-import json
-from openai import OpenAI
-from tools import mongo_tools, redis_tools, kafka_tools, mqtt_tools
+import uuid
+import logging
+import time
+from typing import Optional
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.ai.kodekloud.com/v1")
-MODEL = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4.5")
+from langgraph.graph import StateGraph, START, END
 
-SYSTEM_PROMPT = """You are a Cold Chain Digital Twin AI assistant. You help logistics operators 
-monitor and analyze their refrigerated fleet (trucks and cold storage rooms).
+from agents.state import ColdChainState
+from agents.nodes import (
+    supervisor_node,
+    anomaly_classifier_node,
+    rca_node,
+    alert_router_node,
+    status_query_node,
+    route_from_supervisor,
+)
 
-You have access to real-time and historical data through these tools:
-- MongoDB: Historical telemetry, alerts, asset state
-- Redis: Real-time live state of all assets, active alerts
-- Kafka: Recent streaming events and alerts
-- MQTT: Live sensor readings directly from devices
+logger = logging.getLogger(__name__)
 
-When answering questions:
-1. First check real-time data (Redis/MQTT) for current status
-2. Then check recent events (Kafka) for context
-3. Then query history (MongoDB) for trends and root cause analysis
-4. Correlate findings across sources to give a comprehensive answer
+# =============================================================================
+# Build the StateGraph
+# =============================================================================
 
-Always provide specific data points (temperatures, timestamps, asset IDs).
-If you detect anomalies, explain the likely cause based on correlated events.
-Be concise but thorough. Use the data — don't speculate without evidence."""
+def _build_graph() -> StateGraph:
+    graph = StateGraph(ColdChainState)
 
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_live_state",
-            "description": "Get real-time state of an asset from Redis (temperature, door status, compressor, state, reasons, etc.)",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "asset_id": {"type": "string", "description": "Asset ID like 'truck-01' or 'sensor-room-site1-room1'"}
-                },
-                "required": ["asset_id"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_all_live_states",
-            "description": "Get real-time state for ALL assets from Redis. Returns temperature, door, compressor, state for every asset.",
-            "parameters": {"type": "object", "properties": {}}
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_live_reading",
-            "description": "Get the latest MQTT sensor reading directly from the device (bypasses Redis/MongoDB)",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "asset_id": {"type": "string", "description": "Asset ID"}
-                },
-                "required": ["asset_id"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_active_sensors",
-            "description": "List all sensors currently publishing MQTT data with their last update time",
-            "parameters": {"type": "object", "properties": {}}
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "query_telemetry",
-            "description": "Query historical telemetry readings from MongoDB for an asset",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "asset_id": {"type": "string", "description": "Asset ID (truck_id like 'truck01' or sensor_id like 'sensor-room-site1-room1')"},
-                    "hours": {"type": "integer", "description": "Hours of history to look back (default 2)"},
-                    "limit": {"type": "integer", "description": "Max results to return (default 50)"}
-                },
-                "required": ["asset_id"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_asset_state_from_mongo",
-            "description": "Get the current digital twin state for an asset from MongoDB (includes message count, last updated)",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "asset_id": {"type": "string", "description": "Asset ID"}
-                },
-                "required": ["asset_id"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "find_breaches",
-            "description": "Find temperature breach alerts from MongoDB. Returns alerts with anomaly details.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "asset_id": {"type": "string", "description": "Optional asset ID filter. Omit to get all breaches."},
-                    "hours": {"type": "integer", "description": "Hours to look back (default 24)"},
-                    "limit": {"type": "integer", "description": "Max results (default 20)"}
-                }
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "compare_assets",
-            "description": "Compare current state across multiple assets side-by-side from Redis",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "asset_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "List of asset IDs to compare. If empty, compares all."
-                    }
-                }
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_all_assets",
-            "description": "List all known assets with their current state (NORMAL/WARNING/CRITICAL) and type",
-            "parameters": {"type": "object", "properties": {}}
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_recent_events",
-            "description": "Read recent events from Kafka topics (trucks telemetry, rooms telemetry, or alerts)",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "topic_key": {
-                        "type": "string",
-                        "description": "One of: 'trucks', 'rooms', 'alerts'",
-                        "enum": ["trucks", "rooms", "alerts"]
-                    },
-                    "count": {"type": "integer", "description": "Number of recent messages to read (default 10)"}
-                },
-                "required": ["topic_key"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_active_alerts",
-            "description": "Get all currently active alerts from Redis (assets in WARNING or CRITICAL state)",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "asset_id": {"type": "string", "description": "Optional asset ID to filter alerts for a specific asset"}
-                }
-            }
-        }
-    },
-]
+    # Register nodes
+    graph.add_node("supervisor",          supervisor_node)
+    graph.add_node("anomaly_classifier",  anomaly_classifier_node)
+    graph.add_node("rca",                 rca_node)
+    graph.add_node("alert_router",        alert_router_node)
+    graph.add_node("status_query",        status_query_node)
 
-TOOL_HANDLERS = {
-    "get_live_state": lambda args: redis_tools.get_live_state(**args),
-    "get_all_live_states": lambda args: redis_tools.get_all_live_states(),
-    "get_live_reading": lambda args: mqtt_tools.get_live_reading(**args),
-    "list_active_sensors": lambda args: mqtt_tools.list_active_sensors(),
-    "query_telemetry": lambda args: mongo_tools.query_telemetry(**args),
-    "get_asset_state_from_mongo": lambda args: mongo_tools.get_asset_state(**args),
-    "find_breaches": lambda args: mongo_tools.find_breaches(**args),
-    "compare_assets": lambda args: redis_tools.compare_assets(**args),
-    "list_all_assets": lambda args: redis_tools.list_all_assets(),
-    "read_recent_events": lambda args: kafka_tools.read_recent_events(**args),
-    "get_active_alerts": lambda args: redis_tools.get_active_alerts(**args),
-}
+    # Entry edge
+    graph.add_edge(START, "supervisor")
+
+    # Conditional routing from supervisor
+    graph.add_conditional_edges(
+        "supervisor",
+        route_from_supervisor,
+        {
+            "anomaly_query": "anomaly_classifier",
+            "status_query":  "status_query",
+            "simulation":    "alert_router",
+        },
+    )
+
+    # Anomaly path: classifier → rca → alert_router
+    graph.add_edge("anomaly_classifier", "rca")
+    graph.add_edge("rca",                "alert_router")
+
+    # Terminal edges
+    graph.add_edge("alert_router", END)
+    graph.add_edge("status_query", END)
+
+    return graph
 
 
-def process_query(user_message: str, conversation_history: list = None) -> str:
-    """Process a natural language query using OpenAI-compatible API with tool calling."""
-    client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
+# Compile once at module load — reused across all requests
+_compiled_graph = _build_graph().compile()
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    if conversation_history:
-        messages.extend(conversation_history)
-    messages.append({"role": "user", "content": user_message})
 
-    max_iterations = 10
-    for _ in range(max_iterations):
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=messages,
-            tools=TOOLS,
-            tool_choice="auto",
-        )
+# =============================================================================
+# Public API
+# =============================================================================
 
-        choice = response.choices[0]
+def process_query(user_message: str, conversation_history: Optional[list] = None) -> str:
+    """
+    Process a natural language query through the LangGraph pipeline.
 
-        if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
-            messages.append(choice.message)
+    Args:
+        user_message: The user's natural language question or command.
+        conversation_history: Prior conversation turns (list of role/content dicts).
 
-            for tool_call in choice.message.tool_calls:
-                tool_name = tool_call.function.name
-                try:
-                    tool_args = json.loads(tool_call.function.arguments)
-                except json.JSONDecodeError:
-                    tool_args = {}
+    Returns:
+        Final response string from the pipeline.
+    """
+    t_total = time.perf_counter()
 
-                handler = TOOL_HANDLERS.get(tool_name)
-                if handler:
-                    try:
-                        result = handler(tool_args)
-                    except Exception as e:
-                        result = json.dumps({"error": f"Tool {tool_name} failed: {str(e)}"})
-                else:
-                    result = json.dumps({"error": f"Unknown tool: {tool_name}"})
+    # Extract asset_id hint from message if present
+    asset_id = _extract_asset_id(user_message)
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": result,
-                })
-        else:
-            return choice.message.content or "No response generated."
+    # Build initial state
+    initial_state: ColdChainState = {
+        "user_query":        user_message,
+        "asset_id":          asset_id,
+        "trace_id":          str(uuid.uuid4()),
+        "current_telemetry": None,
+        "recent_events":     None,
+        "intent":            None,
+        "anomaly_label":     None,
+        "confidence":        None,
+        "root_cause":        None,
+        "alert_required":    False,
+        "alert_sent":        False,
+        "response":          None,
+        "messages":          conversation_history or [],
+        "node_latencies":    {},
+    }
 
-    return "Query processing exceeded maximum iterations. Please try a more specific question."
+    try:
+        final_state = _compiled_graph.invoke(initial_state)
+    except Exception as e:
+        logger.error(f"[process_query] graph invocation failed: {e}", exc_info=True)
+        return f"Query processing failed: {e}"
+
+    total_ms = (time.perf_counter() - t_total) * 1000
+    lats = final_state.get("node_latencies") or {}
+
+    logger.info(
+        f"[process_query] DONE trace={final_state['trace_id']} "
+        f"intent={final_state.get('intent')} "
+        f"label={final_state.get('anomaly_label')} "
+        f"total_ms={total_ms:.1f} "
+        f"node_latencies={lats}"
+    )
+
+    return final_state.get("response") or "No response generated."
+
+
+def process_query_with_state(
+    user_message: str,
+    conversation_history: Optional[list] = None,
+) -> ColdChainState:
+    """
+    Like process_query() but returns the full ColdChainState.
+    Used by eval/harness.py to inspect anomaly_label, confidence, etc.
+    """
+    asset_id = _extract_asset_id(user_message)
+
+    initial_state: ColdChainState = {
+        "user_query":        user_message,
+        "asset_id":          asset_id,
+        "trace_id":          str(uuid.uuid4()),
+        "current_telemetry": None,
+        "recent_events":     None,
+        "intent":            None,
+        "anomaly_label":     None,
+        "confidence":        None,
+        "root_cause":        None,
+        "alert_required":    False,
+        "alert_sent":        False,
+        "response":          None,
+        "messages":          conversation_history or [],
+        "node_latencies":    {},
+    }
+
+    return _compiled_graph.invoke(initial_state)
+
+
+# =============================================================================
+# Helper
+# =============================================================================
+
+def _extract_asset_id(message: str) -> Optional[str]:
+    """
+    Extract asset_id hint from a message.
+    Matches patterns like: truck01, truck-01, site1-room1, sensor-room-site1-room2
+    """
+    import re
+    patterns = [
+        r"\b(truck\d+)\b",
+        r"\b(truck-\d+)\b",
+        r"\b(site\d+-room\d+)\b",
+        r"\b(sensor-room-site\d+-room\d+)\b",
+        r"\b(sensor-truck-truck\d+)\b",
+    ]
+    for pat in patterns:
+        m = re.search(pat, message, re.IGNORECASE)
+        if m:
+            return m.group(1).lower()
+    return None

@@ -1,0 +1,20 @@
+# eval/requirements.txt — for running harness.py, dataset_eval.py, scale_test.py
+
+# Data
+pandas>=2.0.0
+numpy>=1.24.0
+scikit-learn>=1.3.0
+pyyaml>=6.0.0
+
+# Kafka
+confluent-kafka>=2.3.0
+
+# MQTT
+paho-mqtt>=2.1.0
+
+# HTTP
+requests>=2.31.0
+
+# Viz (optional — for generating paper figures)
+matplotlib>=3.7.0
+seaborn>=0.12.0

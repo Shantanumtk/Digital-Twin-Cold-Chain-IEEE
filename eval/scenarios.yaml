@@ -1,0 +1,221 @@
+# eval/scenarios.yaml
+# 20 labeled fault injection scenarios for the Docker eval harness.
+# Used by eval/harness.py to inject faults via MQTT and measure P/R/F1.
+#
+# Fields:
+#   id             — unique scenario identifier
+#   fault_type     — ground truth label (matches ColdChainState anomaly_label)
+#   asset_id       — target asset
+#   trigger        — MQTT command type (set_temperature | open_door | fail_compressor | power_outage)
+#   value          — numeric value for temperature triggers (°C)
+#   duration_sec   — how long fault persists before auto-restore
+#   expected_state — CRITICAL | WARNING | NORMAL
+#   description    — human-readable scenario description
+#   severity       — HIGH | MEDIUM | LOW (for sub-label precision)
+
+scenarios:
+
+  # ── TEMP_BREACH ──────────────────────────────────────────────────────────────
+  - id: s001
+    fault_type: TEMP_BREACH
+    asset_id: truck01
+    trigger: set_temperature
+    value: -5.0          # Well above -10°C critical threshold
+    duration_sec: 300
+    expected_state: CRITICAL
+    description: "Truck01 temperature spike to -5°C (frozen goods critical breach)"
+    severity: HIGH
+
+  - id: s002
+    fault_type: TEMP_BREACH
+    asset_id: truck02
+    trigger: set_temperature
+    value: -8.0          # Between warning (-15) and critical (-10)
+    duration_sec: 300
+    expected_state: WARNING
+    description: "Truck02 temperature at -8°C (frozen goods warning range)"
+    severity: MEDIUM
+
+  - id: s003
+    fault_type: TEMP_BREACH
+    asset_id: site1-room1
+    trigger: set_temperature
+    value: 5.0           # Above chilled goods critical threshold (4°C)
+    duration_sec: 300
+    expected_state: CRITICAL
+    description: "Cold room site1-room1 temperature rise to 5°C (chilled goods critical)"
+    severity: HIGH
+
+  - id: s004
+    fault_type: TEMP_BREACH
+    asset_id: truck03
+    trigger: set_temperature
+    value: 0.0           # Significantly above frozen goods threshold
+    duration_sec: 180
+    expected_state: CRITICAL
+    description: "Truck03 temperature at 0°C — severe frozen goods breach"
+    severity: HIGH
+
+  - id: s005
+    fault_type: TEMP_BREACH
+    asset_id: site2-room1
+    trigger: set_temperature
+    value: 3.0           # Above warning threshold for chilled goods
+    duration_sec: 240
+    expected_state: WARNING
+    description: "Cold room site2-room1 at 3°C (chilled goods warning)"
+    severity: MEDIUM
+
+  - id: s006
+    fault_type: TEMP_BREACH
+    asset_id: truck04
+    trigger: set_temperature
+    value: -12.0         # Borderline — above warning (-15) for frozen
+    duration_sec: 300
+    expected_state: WARNING
+    description: "Truck04 gradual temp rise to -12°C (early warning)"
+    severity: LOW
+
+  # ── COMPRESSOR_FAIL ──────────────────────────────────────────────────────────
+  - id: s007
+    fault_type: COMPRESSOR_FAIL
+    asset_id: truck05
+    trigger: fail_compressor
+    value: null
+    duration_sec: 300
+    expected_state: CRITICAL
+    description: "Truck05 compressor failure — temperature will rise"
+    severity: HIGH
+
+  - id: s008
+    fault_type: COMPRESSOR_FAIL
+    asset_id: truck06
+    trigger: fail_compressor
+    value: null
+    duration_sec: 180
+    expected_state: CRITICAL
+    description: "Truck06 compressor failure short duration"
+    severity: HIGH
+
+  - id: s009
+    fault_type: COMPRESSOR_FAIL
+    asset_id: site1-room2
+    trigger: fail_compressor
+    value: null
+    duration_sec: 300
+    expected_state: CRITICAL
+    description: "Cold room site1-room2 compressor failure"
+    severity: HIGH
+
+  - id: s010
+    fault_type: COMPRESSOR_FAIL
+    asset_id: truck07
+    trigger: fail_compressor
+    value: null
+    duration_sec: 120
+    expected_state: CRITICAL
+    description: "Truck07 compressor failure — very short window"
+    severity: HIGH
+
+  - id: s011
+    fault_type: COMPRESSOR_FAIL
+    asset_id: site2-room2
+    trigger: fail_compressor
+    value: null
+    duration_sec: 240
+    expected_state: CRITICAL
+    description: "Cold room site2-room2 compressor failure at elevated ambient"
+    severity: HIGH
+
+  # ── DOOR_FAULT ───────────────────────────────────────────────────────────────
+  - id: s012
+    fault_type: DOOR_FAULT
+    asset_id: truck08
+    trigger: open_door
+    value: null
+    duration_sec: 300
+    expected_state: CRITICAL
+    description: "Truck08 door left open while compressor running"
+    severity: HIGH
+
+  - id: s013
+    fault_type: DOOR_FAULT
+    asset_id: site1-room3
+    trigger: open_door
+    value: null
+    duration_sec: 300
+    expected_state: CRITICAL
+    description: "Cold room site1-room3 door fault — humidity + temp impact"
+    severity: HIGH
+
+  - id: s014
+    fault_type: DOOR_FAULT
+    asset_id: truck09
+    trigger: open_door
+    value: null
+    duration_sec: 120
+    expected_state: WARNING
+    description: "Truck09 door open briefly — warning level"
+    severity: MEDIUM
+
+  - id: s015
+    fault_type: DOOR_FAULT
+    asset_id: truck10
+    trigger: open_door
+    value: null
+    duration_sec: 360
+    expected_state: CRITICAL
+    description: "Truck10 door open extended period — severe temperature rise"
+    severity: HIGH
+
+  # ── POWER_OUTAGE ─────────────────────────────────────────────────────────────
+  - id: s016
+    fault_type: POWER_OUTAGE
+    asset_id: site1
+    trigger: power_outage
+    value: null
+    duration_sec: 600
+    expected_state: CRITICAL
+    description: "Full site1 power outage — all rooms lose compressor power"
+    severity: HIGH
+
+  - id: s017
+    fault_type: POWER_OUTAGE
+    asset_id: site2
+    trigger: power_outage
+    value: null
+    duration_sec: 300
+    expected_state: CRITICAL
+    description: "Site2 power outage — shorter duration"
+    severity: HIGH
+
+  - id: s018
+    fault_type: POWER_OUTAGE
+    asset_id: site3
+    trigger: power_outage
+    value: null
+    duration_sec: 180
+    expected_state: WARNING
+    description: "Site3 brief power interruption"
+    severity: MEDIUM
+
+  # ── NORMAL (negative control — no fault injected) ────────────────────────────
+  - id: s019
+    fault_type: NORMAL
+    asset_id: truck11
+    trigger: null
+    value: null
+    duration_sec: 120
+    expected_state: NORMAL
+    description: "Truck11 baseline — no fault injected, should classify as NORMAL"
+    severity: null
+
+  - id: s020
+    fault_type: NORMAL
+    asset_id: site1-room1
+    trigger: null
+    value: null
+    duration_sec: 120
+    expected_state: NORMAL
+    description: "site1-room1 baseline — verify no false positive detection"
+    severity: null

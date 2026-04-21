@@ -1,0 +1,83 @@
+# =============================================================================
+# Kubernetes Job — Create / configure Cold Chain Kafka topics
+#
+# Creates:
+#   coldchain.ground.truth   (3 partitions) — Phase 2 eval harness ground truth
+#
+# Increases partitions (for Phase 5 scale test):
+#   coldchain.telemetry.trucks  → 5 partitions
+#   coldchain.telemetry.rooms   → 5 partitions
+#   coldchain.alerts            → 5 partitions
+#
+# Run once after Kafka StatefulSet is Ready:
+#   kubectl apply -f k8s/kafka/create-topics-job.yaml -n coldchain
+#   kubectl wait --for=condition=complete job/kafka-topic-setup -n coldchain --timeout=120s
+#   kubectl delete -f k8s/kafka/create-topics-job.yaml -n coldchain
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-topic-setup
+  namespace: coldchain
+  labels:
+    app: kafka-topic-setup
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: kafka-topic-setup
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: kafka-topics
+          image: apache/kafka:3.9.0
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              BOOTSTRAP="kafka:9092"
+
+              wait_kafka() {
+                echo "Waiting for Kafka to be ready..."
+                for i in $(seq 1 30); do
+                  if kafka-topics.sh --bootstrap-server $BOOTSTRAP --list > /dev/null 2>&1; then
+                    echo "Kafka is ready."
+                    return 0
+                  fi
+                  echo "  attempt $i/30 — sleeping 5s"
+                  sleep 5
+                done
+                echo "Kafka did not become ready in time." && exit 1
+              }
+
+              create_or_verify() {
+                local topic="$1"
+                local partitions="$2"
+                local replication="$3"
+                if kafka-topics.sh --bootstrap-server $BOOTSTRAP --list | grep -q "^${topic}$"; then
+                  echo "Topic '${topic}' already exists — verifying partitions..."
+                  kafka-topics.sh --bootstrap-server $BOOTSTRAP                             --alter --topic "$topic" --partitions "$partitions" 2>/dev/null || true
+                  echo "  done."
+                else
+                  echo "Creating topic '${topic}' (partitions=${partitions})..."
+                  kafka-topics.sh --bootstrap-server $BOOTSTRAP                             --create --topic "$topic"                             --partitions "$partitions"                             --replication-factor "$replication"
+                  echo "  created."
+                fi
+              }
+
+              wait_kafka
+
+              # Phase 2: ground truth topic for eval harness
+              create_or_verify "coldchain.ground.truth"         3 1
+
+              # Phase 5: increase existing topics to 5 partitions for scale test
+              create_or_verify "coldchain.telemetry.trucks"     5 1
+              create_or_verify "coldchain.telemetry.rooms"      5 1
+              create_or_verify "coldchain.alerts"               5 1
+
+              echo ""
+              echo "=== Final topic list ==="
+              kafka-topics.sh --bootstrap-server $BOOTSTRAP                         --describe                         --topic coldchain.ground.truth,coldchain.telemetry.trucks,coldchain.telemetry.rooms,coldchain.alerts
+              echo "Topic setup complete."

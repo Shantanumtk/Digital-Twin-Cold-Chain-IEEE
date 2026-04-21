@@ -1,0 +1,15 @@
+# This directory holds the PLOS One CCL-2023 cold chain dataset.
+#
+# Download instructions:
+#   1. Open https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0315322
+#   2. Scroll to "Supporting Information"
+#   3. Download S1.csv, S2.csv, S3.csv
+#   4. Place them here: eval/datasets/plosone/
+#
+# Then run:
+#   python eval/preprocess_plosone.py
+#   python eval/baseline_eval.py
+#   STATE_ENGINE_URL=http://localhost:8000 python eval/dataset_eval.py
+#
+# License: CC BY — cite the paper in your references.
+# This .gitkeep file is intentional — the CSVs are NOT committed to git.

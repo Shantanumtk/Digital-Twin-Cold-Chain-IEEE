@@ -1,1 +1,7 @@
+# MQTT client
 paho-mqtt>=1.6.1,<2.0.0
+
+# Kafka producer — required for coldchain.ground.truth emission (Phase 2)
+# simulator.py publishes labeled fault events to Kafka so eval/harness.py
+# can read ground truth and compute P/R/F1
+confluent-kafka==2.3.0

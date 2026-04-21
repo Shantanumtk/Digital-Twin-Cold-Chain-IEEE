@@ -9,8 +9,8 @@ from openai import OpenAI
 from tools import simulator_tools
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.ai.kodekloud.com/v1")
-MODEL = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4.5")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 
 SYSTEM_PROMPT = """You are a Cold Chain Simulation Controller. You can manipulate the sensor
 simulator environment to create test scenarios for the cold chain monitoring system.

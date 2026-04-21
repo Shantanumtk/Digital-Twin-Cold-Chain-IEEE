@@ -1,0 +1,5 @@
+# Ignore raw dataset CSVs — too large for git, download instructions in .gitkeep
+*.csv
+# Keep processed output
+!processed.csv
+!dataset_stats.json

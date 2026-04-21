@@ -1,0 +1,31 @@
+# =============================================================================
+# Kafka External NodePort Service
+# Phase 5: Exposes Kafka on port 30092 so the MCP Agent running on the
+#           MQTT EC2 instance can reach Kafka inside EKS.
+#
+# Requires the Kafka StatefulSet to have the EXTERNAL listener configured.
+# deploy-script.sh (step 13) handles that via `kubectl set env`.
+#
+# Apply:
+#   kubectl apply -f k8s/kafka/kafka-nodeport-external.yaml -n coldchain
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-external
+  namespace: coldchain
+  labels:
+    app: kafka
+  annotations:
+    # Document which deploy-script step manages this
+    coldchain/managed-by: "deploy-script.sh step 13 (deploy_mcp_agent)"
+spec:
+  type: NodePort
+  selector:
+    app: kafka
+  ports:
+    - name: external
+      port: 9094
+      targetPort: 9094
+      nodePort: 30092
+      protocol: TCP

@@ -57,7 +57,7 @@ export default function HomePage() {
       const [statsRes, assetsRes, alertsRes] = await Promise.all([
         fetchData("/stats"),
         fetchData("/assets"),
-        fetchData("/alerts?limit=20"),
+        fetchData("/alerts/active"),
       ]);
       if (statsRes) {
         setStats({

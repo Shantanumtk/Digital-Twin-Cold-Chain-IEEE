@@ -1,0 +1,236 @@
+version: "3.8"
+
+# =============================================================================
+# Cold Chain Digital Twin — Docker Eval Harness Stack
+# Full local stack for reproducible P/R/F1 evaluation (no AWS required).
+#
+# Usage:
+#   docker compose -f docker-compose.eval.yml up -d
+#   python eval/harness.py
+#   docker compose -f docker-compose.eval.yml down -v
+# =============================================================================
+
+services:
+
+  # ── MQTT Broker ─────────────────────────────────────────────────────────────
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: cc-eval-mosquitto
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    networks:
+      - coldchain-eval
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-i", "healthcheck", "-W", "3"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Apache Kafka (KRaft mode — no Zookeeper) ────────────────────────────────
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: cc-eval-kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/tmp/kraft-combined-logs
+    networks:
+      - coldchain-eval
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ── MongoDB ──────────────────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:8.0
+    container_name: cc-eval-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - coldchain-eval
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: cc-eval-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - coldchain-eval
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── MQTT → Kafka Bridge ──────────────────────────────────────────────────────
+  bridge:
+    build:
+      context: ./bridge
+      dockerfile: Dockerfile
+    container_name: cc-eval-bridge
+    environment:
+      MQTT_BROKER: mosquitto
+      MQTT_PORT: 1883
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_TRUCKS: coldchain.telemetry.trucks
+      KAFKA_TOPIC_ROOMS: coldchain.telemetry.rooms
+      KAFKA_TOPIC_ALERTS: coldchain.alerts
+    networks:
+      - coldchain-eval
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: on-failure
+
+  # ── Kafka → MongoDB Ingestion ────────────────────────────────────────────────
+  ingestion:
+    build:
+      context: ./ingestion
+      dockerfile: Dockerfile
+    container_name: cc-eval-ingestion
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_GROUP_ID: coldchain-ingestion-eval
+      KAFKA_TOPICS: coldchain.telemetry.trucks,coldchain.telemetry.rooms,coldchain.alerts
+      MONGO_URI: mongodb://mongodb:27017
+      MONGO_DB: coldchain
+    networks:
+      - coldchain-eval
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    restart: on-failure
+
+  # ── State Engine ─────────────────────────────────────────────────────────────
+  state-engine:
+    build:
+      context: ./state-engine
+      dockerfile: Dockerfile
+    container_name: cc-eval-state-engine
+    ports:
+      - "8000:8000"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_GROUP_ID: state-engine-eval
+      KAFKA_TOPICS: coldchain.telemetry.trucks,coldchain.telemetry.rooms,coldchain.alerts
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      MONGO_URI: mongodb://mongodb:27017
+      MONGO_DB: coldchain
+      # Disable SNS in eval mode
+      SNS_TOPIC_ARN: ""
+      PROFILE_PATH: /app/config/active.yaml
+    volumes:
+      - ./profiles/frozen-logistics.yaml:/app/config/active.yaml:ro
+    networks:
+      - coldchain-eval
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: on-failure
+
+  # ── MCP Agent (LangGraph) ────────────────────────────────────────────────────
+  mcp-agent:
+    build:
+      context: ./mcp-agent
+      dockerfile: Dockerfile
+    container_name: cc-eval-mcp-agent
+    ports:
+      - "8001:8001"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      MONGO_URI: mongodb://mongodb:27017
+      MONGO_DB: coldchain
+      MQTT_BROKER: mosquitto
+      MQTT_PORT: 1883
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8001
+    networks:
+      - coldchain-eval
+    depends_on:
+      state-engine:
+        condition: service_healthy
+    restart: on-failure
+
+  # ── Sensor Simulator ─────────────────────────────────────────────────────────
+  simulator:
+    build:
+      context: ./sensors
+      dockerfile: Dockerfile
+    container_name: cc-eval-simulator
+    environment:
+      MQTT_BROKER: mosquitto
+      MQTT_PORT: 1883
+      MQTT_QOS: 1
+      PUBLISH_INTERVAL: "2.0"    # Faster for eval
+      NUM_COLD_ROOMS: 5
+      NUM_TRUCKS: 12
+    networks:
+      - coldchain-eval
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    restart: on-failure
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:
+  kafka_data:
+  mongo_data:
+  redis_data:
+
+networks:
+  coldchain-eval:
+    driver: bridge
