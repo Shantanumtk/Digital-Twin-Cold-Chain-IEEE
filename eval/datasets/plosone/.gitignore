@@ -3,3 +3,4 @@
 # Keep processed output
 !processed.csv
 !dataset_stats.json
+*.mat
