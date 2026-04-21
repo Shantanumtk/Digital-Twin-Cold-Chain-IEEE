@@ -106,3 +106,5 @@ target/
 scratch/
 tmp/
 temp/
+eval/datasets/plosone/processed.csv
+eval/datasets/plosone/*.csv
