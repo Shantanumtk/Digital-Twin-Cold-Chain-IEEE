@@ -58,7 +58,7 @@ def supervisor_node(state: ColdChainState) -> ColdChainState:
       - "simulation"     → alert_router → END
     """
     t0 = time.perf_counter()
-    query = state["user_query"].lower()
+    query = state.get("message", state.get("user_query", "")).lower()
 
     # Rule-based routing first (fast, deterministic, no LLM tokens wasted)
     anomaly_keywords = [
@@ -91,7 +91,7 @@ def supervisor_node(state: ColdChainState) -> ColdChainState:
                             "Reply with only the intent word."
                         ),
                     },
-                    {"role": "user", "content": state["user_query"]},
+                    {"role": "user", "content": state.get("message", state.get("user_query", ""))},
                 ],
             )
             intent = resp.choices[0].message.content.strip().lower()
@@ -151,7 +151,7 @@ def anomaly_classifier_node(state: ColdChainState) -> ColdChainState:
 
     # ── 2. LLM classification ──────────────────────────────────────────────
     context = json.dumps({
-        "user_query": state["user_query"],
+        "user_query": state.get("message", state.get("user_query", "")),
         "asset_id": asset_id,
         "telemetry": telemetry,
         "recent_alerts": events[:3],
@@ -396,10 +396,11 @@ def status_query_node(state: ColdChainState) -> ColdChainState:
         else:
             raw = redis_tools.get_all_live_states()
             all_states = json.loads(raw) if isinstance(raw, str) else []
+            all_states = all_states or []  # guard against None
 
             # LLM answers the question using live data
             context = json.dumps({
-                "user_query": state["user_query"],
+                "user_query": state.get("message", state.get("user_query", "")),
                 "fleet_states": all_states[:20],
             }, indent=2)
             resp = _client().chat.completions.create(

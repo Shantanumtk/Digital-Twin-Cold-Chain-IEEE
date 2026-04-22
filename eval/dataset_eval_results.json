@@ -1,0 +1,13 @@
+{
+  "method": "langgraph_agent",
+  "dataset": "plosone_ccl_2023",
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1": 1.0,
+  "tp": 20000,
+  "fp": 0,
+  "tn": 10000,
+  "fn": 0,
+  "n_samples": 30000,
+  "state_engine_url": "http://ac7544b8135104b1b92138027125e161-614730657.us-west-2.elb.amazonaws.com"
+}

@@ -1,0 +1,36 @@
+{
+  "method": "threshold_baseline",
+  "dataset": "plosone_ccl_2023",
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1": 1.0,
+  "tp": 20000,
+  "fp": 0,
+  "tn": 10000,
+  "fn": 0,
+  "n_samples": 30000,
+  "thresholds": {
+    "temp_critical_c": -10.0,
+    "temp_warning_c": -15.0
+  },
+  "per_vehicle": {
+    "truck-s1": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "n_samples": 10000
+    },
+    "truck-s2": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "n_samples": 10000
+    },
+    "truck-s3": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_samples": 10000
+    }
+  }
+}

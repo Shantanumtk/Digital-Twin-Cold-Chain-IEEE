@@ -1,0 +1,19 @@
+{
+  "baseline": {
+    "method": "Threshold Baseline",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "n_samples": 30000,
+    "threshold": -18.0
+  },
+  "langgraph": {
+    "method": "LangGraph Multi-Agent",
+    "precision": 0.6849,
+    "recall": 1.0,
+    "f1": 0.813,
+    "n_samples": 500,
+    "errors": 269,
+    "threshold_gt": -18.0
+  }
+}

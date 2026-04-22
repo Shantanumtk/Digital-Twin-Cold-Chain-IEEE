@@ -59,7 +59,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Calculate total steps (14 if MCP Agent, 13 if not)
+# Calculate total steps
 if [ -n "$API_KEY" ]; then
   TOTAL_STEPS=14
 else
@@ -84,9 +84,9 @@ log_step() {
   echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 }
 
-log_skip() { echo -e "  ${GREEN}✓ Already done — $1${NC}"; }
-log_done() { echo -e "  ${GREEN}✓ $1${NC}"; }
-log_info() { echo -e "  ${YELLOW}→ $1${NC}"; }
+log_skip()  { echo -e "  ${GREEN}✓ Already done — $1${NC}"; }
+log_done()  { echo -e "  ${GREEN}✓ $1${NC}"; }
+log_info()  { echo -e "  ${YELLOW}→ $1${NC}"; }
 log_error() { echo -e "  ${RED}✗ $1${NC}"; }
 
 print_summary_table() {
@@ -103,14 +103,15 @@ print_summary_table() {
     local status="${STEP_STATUSES[$i]}"
     local detail="${STEP_DETAILS[$i]}"
     if [ ${#detail} -gt 23 ]; then detail="${detail:0:20}..."; fi
-    if [ ${#name} -gt 29 ]; then name="${name:0:26}..."; fi
+    if [ ${#name}  -gt 29 ]; then name="${name:0:26}..."; fi
     local icon="" color=""
     case "$status" in
       pass) icon="✅"; color="${GREEN}" ;;
-      skip) icon="⏭️ "; color="${CYAN}" ;;
-      fail) icon="❌"; color="${RED}" ;;
+      skip) icon="⏭️ "; color="${CYAN}"  ;;
+      fail) icon="❌"; color="${RED}"   ;;
     esac
-    printf "║ %-2s ║ %-29s ║ ${color}%-6s${NC} ║ %-23s ║\n" "$num" "$name" "$icon" "$detail"
+    printf "║ %-2s ║ %-29s ║ ${color}%-6s${NC} ║ %-23s ║\n" \
+      "$num" "$name" "$icon" "$detail"
   done
 
   echo -e "${BOLD}╚════╩═══════════════════════════════╩════════╩═════════════════════════╝${NC}"
@@ -118,9 +119,9 @@ print_summary_table() {
   local passed=0 skipped=0 failed=0
   for s in "${STEP_STATUSES[@]}"; do
     case "$s" in
-      pass) passed=$((passed + 1)) ;;
+      pass) passed=$((passed + 1))   ;;
       skip) skipped=$((skipped + 1)) ;;
-      fail) failed=$((failed + 1)) ;;
+      fail) failed=$((failed + 1))   ;;
     esac
   done
 
@@ -130,18 +131,31 @@ print_summary_table() {
 }
 
 # =============================================================================
-# NEW HELPER: Dynamically find which EKS node a pod is running on
-# Needed because after terraform destroy+apply, pods can land on different nodes
+# HELPER: Find which EKS node a pod is running on
 # =============================================================================
 get_eks_node_ip_for_pod() {
-  # Usage: get_eks_node_ip_for_pod <pod-name-grep-pattern> [namespace]
-  # Returns the private IP of the EKS node running the matched pod
+  # Returns the private IP of the EKS node running the matched pod.
+  # kubectl get pod -o wide column 7 is the NODE NAME (hostname), not IP.
+  # We resolve the node name -> InternalIP via a separate kubectl get node call.
   local pattern="$1"
   local ns="${2:-$NAMESPACE}"
-  kubectl get pod -n "$ns" -o wide 2>/dev/null \
+
+  # Step 1: get the node NAME from the pod listing
+  local node_name
+  node_name=$(kubectl get pod -n "$ns" -o wide 2>/dev/null \
     | grep "$pattern" \
     | awk '{print $7}' \
-    | head -1
+    | head -1)
+
+  if [ -z "$node_name" ] || [ "$node_name" = "<none>" ]; then
+    echo ""
+    return 0
+  fi
+
+  # Step 2: resolve node name -> InternalIP
+  kubectl get node "$node_name" \
+    -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null \
+    || echo ""
 }
 
 # =============================================================================
@@ -248,7 +262,7 @@ update_kubeconfig() {
 }
 
 # =============================================================================
-# Step 4: Verify ECR Repositories (created by Terraform)
+# Step 4: Verify ECR Repositories
 # =============================================================================
 ensure_ecr_repos() {
   log_step "Verify ECR Repositories"
@@ -336,7 +350,8 @@ push_thirdparty_images() {
     local tag="${source##*:}"
     local target="${ECR_REGISTRY}/${repo}:${tag}"
 
-    if aws ecr describe-images --repository-name "$repo" --image-ids imageTag="$tag" --region "$AWS_REGION" &>/dev/null 2>&1; then
+    if aws ecr describe-images --repository-name "$repo" \
+        --image-ids imageTag="$tag" --region "$AWS_REGION" &>/dev/null 2>&1; then
       log_skip "$repo:$tag already in ECR"
       skipped=$((skipped + 1))
       continue
@@ -383,7 +398,8 @@ setup_irsa_sns() {
   local SA_NAME="state-engine-sa"
   local ROLE_NAME="coldchain-state-engine-sns-role"
   local POLICY_NAME="coldchain-sns-publish"
-  local OIDC_ID=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION" \
+  local OIDC_ID
+  OIDC_ID=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION" \
     --query "cluster.identity.oidc.issuer" --output text | sed 's|.*/||')
   local OIDC_PROVIDER="oidc.eks.${AWS_REGION}.amazonaws.com/id/${OIDC_ID}"
   local POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:policy/${POLICY_NAME}"
@@ -497,7 +513,8 @@ deploy_stateful_services() {
   local redis_action="deployed"
 
   if kubectl get statefulset kafka -n "$NAMESPACE" &>/dev/null; then
-    KAFKA_READY=$(kubectl get statefulset kafka -n "$NAMESPACE" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+    KAFKA_READY=$(kubectl get statefulset kafka -n "$NAMESPACE" \
+      -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
     if [ "${KAFKA_READY:-0}" -ge 1 ]; then
       log_skip "Kafka StatefulSet running ($KAFKA_READY replicas ready)"
       kafka_action="skipped"
@@ -511,7 +528,8 @@ deploy_stateful_services() {
   fi
 
   if kubectl get statefulset redis -n "$NAMESPACE" &>/dev/null; then
-    REDIS_READY=$(kubectl get statefulset redis -n "$NAMESPACE" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+    REDIS_READY=$(kubectl get statefulset redis -n "$NAMESPACE" \
+      -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
     if [ "${REDIS_READY:-0}" -ge 1 ]; then
       log_skip "Redis StatefulSet running ($REDIS_READY replicas ready)"
       redis_action="skipped"
@@ -551,17 +569,17 @@ deploy_app_services() {
   local restarted=0
 
   for i in "${!APP_SERVICES[@]}"; do
-    local svc_dir="${APP_SERVICES[$i]}"
+    local svc_dir="${DEPLOY_NAMES[$i]}"
     local deploy_name="${DEPLOY_NAMES[$i]}"
 
     if kubectl get deployment "$deploy_name" -n "$NAMESPACE" &>/dev/null; then
-      kubectl apply -f "k8s/${svc_dir}/"
+      kubectl apply -f "k8s/${APP_SERVICES[$i]}/"
       kubectl rollout restart deployment "$deploy_name" -n "$NAMESPACE"
       log_info "Restarted $deploy_name"
       restarted=$((restarted + 1))
     else
       log_info "Deploying $deploy_name..."
-      kubectl apply -f "k8s/${svc_dir}/"
+      kubectl apply -f "k8s/${APP_SERVICES[$i]}/"
       deployed=$((deployed + 1))
     fi
   done
@@ -680,17 +698,16 @@ YAML
   # ── 13b: NodePort + EXTERNAL listener for Kafka ───────────────────────────
   log_info "Creating Kafka external NodePort service (30092)..."
 
-  # IMPORTANT: Use the node IP where kafka-0 actually runs (not just any node)
-  # After terraform destroy+apply, kafka-0 can land on a different node
   KAFKA_NODE_IP=$(get_eks_node_ip_for_pod "kafka-0")
   if [ -z "$KAFKA_NODE_IP" ]; then
-    # Fallback: use first node
-    KAFKA_NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+    KAFKA_NODE_IP=$(kubectl get nodes \
+      -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
   fi
   log_info "Kafka node IP: $KAFKA_NODE_IP"
 
   CURRENT_LISTENERS=$(kubectl get statefulset kafka -n "$NAMESPACE" \
-    -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="KAFKA_LISTENERS")].value}' 2>/dev/null || echo "")
+    -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="KAFKA_LISTENERS")].value}' \
+    2>/dev/null || echo "")
 
   if echo "$CURRENT_LISTENERS" | grep -q "EXTERNAL"; then
     log_skip "Kafka already has EXTERNAL listener"
@@ -726,37 +743,42 @@ YAML
   log_info "Adding security group rules (MQTT EC2 → EKS NodePorts)..."
 
   MQTT_INSTANCE_ID=$(aws ec2 describe-instances \
-    --filters "Name=tag:Name,Values=${PROJECT}-mqtt-broker" "Name=instance-state-name,Values=running" \
-    --query "Reservations[0].Instances[0].InstanceId" --output text 2>/dev/null || true)
+    --filters \
+      "Name=tag:Name,Values=${PROJECT}-mqtt-broker" \
+      "Name=instance-state-name,Values=running" \
+    --query "Reservations[0].Instances[0].InstanceId" \
+    --output text 2>/dev/null || true)
 
   MQTT_SG=""
+  MQTT_PRIVATE_IP="$MQTT_BROKER_PRIVATE_IP"
   if [ -n "$MQTT_INSTANCE_ID" ] && [ "$MQTT_INSTANCE_ID" != "None" ]; then
     MQTT_SG=$(aws ec2 describe-instances \
       --instance-ids "$MQTT_INSTANCE_ID" \
-      --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" --output text 2>/dev/null || true)
+      --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" \
+      --output text 2>/dev/null || true)
+    MQTT_PRIVATE_IP=$(aws ec2 describe-instances \
+      --instance-ids "$MQTT_INSTANCE_ID" \
+      --query "Reservations[0].Instances[0].PrivateIpAddress" \
+      --output text 2>/dev/null || echo "$MQTT_BROKER_PRIVATE_IP")
   fi
 
-  # Use the actual node IPs to find the right security group
   REDIS_NODE_IP=$(get_eks_node_ip_for_pod "redis-0")
   EKS_NODE_SG=""
   if [ -n "$REDIS_NODE_IP" ]; then
     EKS_NODE_INSTANCE=$(aws ec2 describe-instances \
       --filters "Name=private-ip-address,Values=${REDIS_NODE_IP}" \
-      --query "Reservations[0].Instances[0].InstanceId" --output text 2>/dev/null || true)
+      --query "Reservations[0].Instances[0].InstanceId" \
+      --output text 2>/dev/null || true)
     if [ -n "$EKS_NODE_INSTANCE" ] && [ "$EKS_NODE_INSTANCE" != "None" ]; then
       EKS_NODE_SG=$(aws ec2 describe-instances \
         --instance-ids "$EKS_NODE_INSTANCE" \
-        --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" --output text 2>/dev/null || true)
+        --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" \
+        --output text 2>/dev/null || true)
     fi
   fi
 
   if [ -n "$EKS_NODE_SG" ] && [ "$EKS_NODE_SG" != "None" ]; then
     log_info "EKS Node SG: $EKS_NODE_SG"
-
-    # Use MQTT EC2 private IP as CIDR (more reliable than source-group across VPC peering)
-    MQTT_PRIVATE_IP=$(aws ec2 describe-instances \
-      --instance-ids "$MQTT_INSTANCE_ID" \
-      --query "Reservations[0].Instances[0].PrivateIpAddress" --output text 2>/dev/null || echo "$MQTT_BROKER_PRIVATE_IP")
 
     aws ec2 authorize-security-group-ingress \
       --group-id "$EKS_NODE_SG" \
@@ -787,29 +809,24 @@ YAML
       || log_info "(MCP Agent 8001 SG rule already exists)"
   fi
 
-  # ── 13d: Upload code + Write persistent env file + Install systemd ─────────
-  # KEY FIX: Instead of passing env vars inline to docker run (which are lost
-  # on container restart), we:
-  #   1. Write /etc/mcp-agent.env on the EC2 (persists across reboots)
-  #   2. Install /usr/local/bin/restart-mcp-agent (always reads from env file)
-  #   3. Install systemd service (auto-starts container on EC2 reboot)
-  #   4. Start container via restart-mcp-agent (not raw docker run)
-
-  # Get the correct node IPs at deploy time
+  # ── 13d: Resolve node IPs for env file ────────────────────────────────────
   REDIS_NODE_IP=$(get_eks_node_ip_for_pod "redis-0")
   KAFKA_NODE_IP=$(get_eks_node_ip_for_pod "kafka-0")
 
   if [ -z "$REDIS_NODE_IP" ]; then
-    REDIS_NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+    REDIS_NODE_IP=$(kubectl get nodes \
+      -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
     log_info "Fallback: using first node IP for Redis: $REDIS_NODE_IP"
   fi
   if [ -z "$KAFKA_NODE_IP" ]; then
-    KAFKA_NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+    KAFKA_NODE_IP=$(kubectl get nodes \
+      -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
     log_info "Fallback: using first node IP for Kafka: $KAFKA_NODE_IP"
   fi
 
   log_info "Redis node: $REDIS_NODE_IP | Kafka node: $KAFKA_NODE_IP"
 
+  # ── 13e: Upload MCP Agent code ────────────────────────────────────────────
   log_info "Uploading MCP Agent code to MQTT EC2 (${MQTT_BROKER_IP})..."
   ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no ${SSH_USER}@${MQTT_BROKER_IP} \
     "mkdir -p ~/mcp-agent ~/CPSC-597-Digital-Twin-Cold-Chain/profiles" 2>/dev/null
@@ -822,8 +839,8 @@ YAML
     ${SSH_USER}@${MQTT_BROKER_IP}:~/CPSC-597-Digital-Twin-Cold-Chain/profiles/active.yaml 2>/dev/null
   log_done "Code and profiles uploaded"
 
-  # Write /etc/mcp-agent.env — this is the persistent env file
-  # All env vars live here; docker run uses --env-file, not inline -e flags
+  # ── 13f: Write /etc/mcp-agent.env ─────────────────────────────────────────
+  # FIX: chmod 644 (not 600) so the ubuntu user / docker can read it
   log_info "Writing persistent env file /etc/mcp-agent.env..."
   ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no ${SSH_USER}@${MQTT_BROKER_IP} \
     "sudo tee /etc/mcp-agent.env > /dev/null << 'ENVEOF'
@@ -840,20 +857,23 @@ MQTT_PORT=1883
 MCP_HOST=0.0.0.0
 MCP_PORT=8001
 ENVEOF
-sudo chmod 600 /etc/mcp-agent.env
+sudo chmod 644 /etc/mcp-agent.env
+sudo chown root:root /etc/mcp-agent.env
 echo 'Wrote /etc/mcp-agent.env'"
-  log_done "/etc/mcp-agent.env written (chmod 600)"
+  log_done "/etc/mcp-agent.env written (chmod 644 — readable by docker)"
 
-  # Install restart-mcp-agent convenience command
+  # ── 13g: Install restart-mcp-agent ────────────────────────────────────────
+  # FIX: all docker commands use sudo so ubuntu user can run them without
+  # needing to be in the docker group, and --env-file reads the 644 file
   log_info "Installing restart-mcp-agent command..."
   ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no ${SSH_USER}@${MQTT_BROKER_IP} \
     "sudo tee /usr/local/bin/restart-mcp-agent > /dev/null << 'SCRIPTEOF'
 #!/bin/bash
 set -e
 echo \"Restarting mcp-agent...\"
-docker stop mcp-agent 2>/dev/null || true
-docker rm   mcp-agent 2>/dev/null || true
-docker run -d \
+sudo docker stop mcp-agent 2>/dev/null || true
+sudo docker rm   mcp-agent 2>/dev/null || true
+sudo docker run -d \
   --name mcp-agent \
   --network host \
   --restart unless-stopped \
@@ -862,13 +882,13 @@ docker run -d \
   -v /home/ubuntu/CPSC-597-Digital-Twin-Cold-Chain:/home/ubuntu/CPSC-597-Digital-Twin-Cold-Chain:ro \
   mcp-agent:latest
 echo 'mcp-agent started'
-docker ps --filter name=mcp-agent --format 'table {{.Names}}\t{{.Status}}'
+sudo sudo docker ps --filter name=mcp-agent --format 'table {{.Names}}\t{{.Status}}'
 SCRIPTEOF
 sudo chmod +x /usr/local/bin/restart-mcp-agent
 echo 'Installed restart-mcp-agent'"
   log_done "/usr/local/bin/restart-mcp-agent installed"
 
-  # Install systemd service — auto-starts container on EC2 reboot
+  # ── 13h: Install systemd service ──────────────────────────────────────────
   log_info "Installing systemd service (auto-start on reboot)..."
   ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no ${SSH_USER}@${MQTT_BROKER_IP} \
     "sudo tee /etc/systemd/system/mcp-agent.service > /dev/null << 'SVCEOF'
@@ -881,7 +901,7 @@ Requires=docker.service
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/bin/restart-mcp-agent
-ExecStop=docker stop mcp-agent
+ExecStop=/usr/bin/docker stop mcp-agent
 TimeoutStartSec=60
 
 [Install]
@@ -892,44 +912,45 @@ sudo systemctl enable mcp-agent.service
 echo 'Systemd service enabled'"
   log_done "Systemd service enabled (will auto-start on EC2 reboot)"
 
-  # Build and start the container
+  # ── 13i: Build image and start container ──────────────────────────────────
   log_info "Building and starting MCP Agent container..."
   ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no ${SSH_USER}@${MQTT_BROKER_IP} << 'REMOTE_EOF'
 set -e
 cd ~/mcp-agent
 
 echo "  Building MCP Agent image..."
-docker build -t mcp-agent:latest . 2>&1 | tail -3
+sudo docker build -t mcp-agent:latest . 2>&1 | tail -3
 
-# Use the installed restart script (reads from /etc/mcp-agent.env)
 echo "  Starting container via restart-mcp-agent..."
-/usr/local/bin/restart-mcp-agent
+sudo /usr/local/bin/restart-mcp-agent
 
 sleep 3
 echo ""
 echo "  Verifying env vars inside container:"
-docker exec mcp-agent env | grep -E "REDIS_HOST|KAFKA_BOOTSTRAP|OPENAI_BASE_URL" | sort
+sudo docker exec mcp-agent env \
+  | grep -E "REDIS_HOST|KAFKA_BOOTSTRAP|OPENAI_BASE_URL" | sort
 
 echo ""
 echo "  Last 5 logs:"
-docker logs mcp-agent --tail 5
+sudo sudo docker logs mcp-agent --tail 5
 REMOTE_EOF
 
-  # ── 13e: Verify ───────────────────────────────────────────────────────────
+  # ── 13j: Health check ─────────────────────────────────────────────────────
   log_info "Verifying MCP Agent health..."
   sleep 5
   HEALTH=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no ${SSH_USER}@${MQTT_BROKER_IP} \
-    "curl -s --max-time 5 http://localhost:8001/api/health" 2>/dev/null || echo '{"status":"unreachable"}')
+    "curl -s --max-time 5 http://localhost:8001/api/health" 2>/dev/null \
+    || echo '{"status":"unreachable"}')
   log_info "Health: $HEALTH"
 
   log_done "MCP Agent deployed on ${MQTT_BROKER_IP}:8001"
-  log_done "To restart manually: ssh ... 'restart-mcp-agent'"
-  log_done "To update API key:   ssh ... 'sudo nano /etc/mcp-agent.env && restart-mcp-agent'"
+  log_done "To restart manually:  ssh ... 'sudo restart-mcp-agent'"
+  log_done "To update API key:    ssh ... 'sudo nano /etc/mcp-agent.env && sudo restart-mcp-agent'"
   track_step "MCP Agent (Phase 5)" "pass" "Running on :8001"
 }
 
 # =============================================================================
-# Step 14 (or 13): Print Endpoints & Summary Table
+# Step 14 (or 13): Print Endpoints & Summary
 # =============================================================================
 print_summary() {
   log_step "Deployment Complete"
@@ -945,19 +966,19 @@ print_summary() {
   echo -e "${BOLD}╔══════════════════════════════════════════════════════════════════════╗${NC}"
   echo -e "${BOLD}║                        SERVICE ENDPOINTS                             ║${NC}"
   echo -e "${BOLD}╠═══════════════════╦══════════════════════════════════════════════════╣${NC}"
-  printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "Dashboard" "http://${DASH_URL}"
+  printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "Dashboard"        "http://${DASH_URL}"
   printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "State Engine API" "http://${STATE_URL}"
-  printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "MQTT Broker" "${MQTT_BROKER_IP}:1883"
+  printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "MQTT Broker"      "${MQTT_BROKER_IP}:1883"
   printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "MongoDB (private)" "${MONGODB_PRIVATE_IP}:27017"
 
   if [ -n "$API_KEY" ]; then
     REDIS_NODE=$(get_eks_node_ip_for_pod "redis-0")
     KAFKA_NODE=$(get_eks_node_ip_for_pod "kafka-0")
-    printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "MCP Agent" "http://${MQTT_BROKER_IP}:8001"
-    printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "MCP Query API" "POST http://${MQTT_BROKER_IP}:8001/api/chat/query"
-    printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "MCP Sim API" "POST http://${MQTT_BROKER_IP}:8001/api/chat/simulate"
-    printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "Redis NodePort" "${REDIS_NODE}:30379"
-    printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "Kafka NodePort" "${KAFKA_NODE}:30092"
+    printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "MCP Agent"       "http://${MQTT_BROKER_IP}:8001"
+    printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "MCP Query API"   "POST http://${MQTT_BROKER_IP}:8001/api/chat/query"
+    printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "MCP Sim API"     "POST http://${MQTT_BROKER_IP}:8001/api/chat/simulate"
+    printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "Redis NodePort"  "${REDIS_NODE}:30379"
+    printf  "║ %-17s ║ ${GREEN}%-48s${NC} ║\n" "Kafka NodePort"  "${KAFKA_NODE}:30092"
   fi
 
   echo -e "${BOLD}╚═══════════════════╩════════════════════════════════════════════════════╝${NC}"
@@ -965,9 +986,15 @@ print_summary() {
   if [ -n "$API_KEY" ]; then
     echo ""
     echo -e "  ${BOLD}MCP Agent persistence:${NC}"
-    echo "  ├── /etc/mcp-agent.env          (env vars — survives reboots)"
-    echo "  ├── /usr/local/bin/restart-mcp-agent  (manual restart command)"
-    echo "  └── systemd mcp-agent.service   (auto-start on EC2 reboot)"
+    echo "  ├── /etc/mcp-agent.env               (env vars, chmod 644 — survives reboots)"
+    echo "  ├── /usr/local/bin/restart-mcp-agent  (manual restart — uses sudo docker)"
+    echo "  └── systemd mcp-agent.service         (auto-start on EC2 reboot)"
+    echo ""
+    echo -e "  ${BOLD}Useful commands on MQTT EC2:${NC}"
+    echo "  sudo restart-mcp-agent                          # restart container"
+    echo "  sudo docker logs mcp-agent -f                   # tail logs"
+    echo "  sudo docker exec mcp-agent env | grep REDIS     # verify env"
+    echo "  sudo nano /etc/mcp-agent.env                    # edit config"
   fi
 
   echo ""
