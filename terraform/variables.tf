@@ -100,10 +100,10 @@ variable "common_tags" {
   description = "Common tags for all resources"
   type        = map(string)
   default = {
-    Project     = "ColdChain-Digital-Twin"
-    Course      = "CPSC-589"
-    University  = "CSUF"
-    ManagedBy   = "Terraform"
+    Project    = "ColdChain-Digital-Twin"
+    Course     = "CPSC-589"
+    University = "CSUF"
+    ManagedBy  = "Terraform"
   }
 }
 

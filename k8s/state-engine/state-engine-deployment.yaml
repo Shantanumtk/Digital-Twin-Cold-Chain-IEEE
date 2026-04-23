@@ -15,6 +15,7 @@ spec:
       labels:
         app: state-engine
     spec:
+      serviceAccountName: state-engine-sa
       containers:
         - name: state-engine
           image: 443071119316.dkr.ecr.us-west-2.amazonaws.com/coldchain-digital-twin-state-engine:latest

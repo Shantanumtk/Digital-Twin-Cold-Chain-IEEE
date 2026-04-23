@@ -85,7 +85,7 @@ output "ssh_mqtt_broker_command" {
 
 output "next_steps" {
   description = "Next steps after Phase 1 deployment"
-  value = <<-EOT
+  value       = <<-EOT
     
     ============================================
     Phase 1 Deployment Complete!

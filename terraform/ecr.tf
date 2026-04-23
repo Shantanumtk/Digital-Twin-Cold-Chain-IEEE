@@ -5,7 +5,7 @@
 resource "aws_ecr_repository" "bridge" {
   name                 = "${var.project_name}-bridge"
   image_tag_mutability = "MUTABLE"
-  force_delete          = true
+  force_delete         = true
 
   image_scanning_configuration {
     scan_on_push = true
@@ -44,7 +44,7 @@ resource "aws_ecr_lifecycle_policy" "bridge" {
 resource "aws_ecr_repository" "ingestion" {
   name                 = "${var.project_name}-ingestion"
   image_tag_mutability = "MUTABLE"
-  force_delete          = true
+  force_delete         = true
   image_scanning_configuration {
     scan_on_push = true
   }
@@ -82,7 +82,7 @@ resource "aws_ecr_lifecycle_policy" "ingestion" {
 resource "aws_ecr_repository" "kafka" {
   name                 = "coldchain-kafka"
   image_tag_mutability = "MUTABLE"
-  force_delete          = true
+  force_delete         = true
   image_scanning_configuration {
     scan_on_push = true
   }
@@ -120,7 +120,7 @@ resource "aws_ecr_lifecycle_policy" "kafka" {
 resource "aws_ecr_repository" "state_engine" {
   name                 = "${var.project_name}-state-engine"
   image_tag_mutability = "MUTABLE"
-  force_delete          = true
+  force_delete         = true
   image_scanning_configuration {
     scan_on_push = true
   }
@@ -158,7 +158,7 @@ resource "aws_ecr_lifecycle_policy" "state_engine" {
 resource "aws_ecr_repository" "redis" {
   name                 = "coldchain-redis"
   image_tag_mutability = "MUTABLE"
-  force_delete          = true
+  force_delete         = true
 
   image_scanning_configuration {
     scan_on_push = true
@@ -176,7 +176,7 @@ resource "aws_ecr_repository" "redis" {
 resource "aws_ecr_repository" "dashboard" {
   name                 = "${var.project_name}-dashboard"
   image_tag_mutability = "MUTABLE"
-  force_delete          = true
+  force_delete         = true
 
   image_scanning_configuration {
     scan_on_push = true

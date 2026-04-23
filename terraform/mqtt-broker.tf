@@ -151,7 +151,7 @@ resource "tls_self_signed_cert" "ca" {
     organizational_unit = "CPSC 589"
   }
 
-  validity_period_hours = 87600  # 10 years
+  validity_period_hours = 87600 # 10 years
   is_ca_certificate     = true
 
   allowed_uses = [
@@ -191,7 +191,7 @@ resource "tls_locally_signed_cert" "mqtt_server" {
   ca_private_key_pem = tls_private_key.ca.private_key_pem
   ca_cert_pem        = tls_self_signed_cert.ca.cert_pem
 
-  validity_period_hours = 8760  # 1 year
+  validity_period_hours = 8760 # 1 year
 
   allowed_uses = [
     "key_encipherment",
@@ -207,7 +207,7 @@ resource "tls_locally_signed_cert" "mqtt_server" {
 resource "aws_secretsmanager_secret" "mqtt_certs" {
   name                    = "${var.project_name}/mqtt-certificates"
   description             = "TLS certificates for MQTT broker"
-  recovery_window_in_days = 0  # Immediate deletion for dev
+  recovery_window_in_days = 0 # Immediate deletion for dev
 
   tags = {
     Name = "${var.project_name}-mqtt-certs"
@@ -258,12 +258,12 @@ resource "aws_instance" "mqtt_broker" {
   }
 
   user_data = base64encode(templatefile("${path.module}/scripts/mqtt-broker-init.sh", {
-    aws_region      = var.aws_region
-    secret_arn      = aws_secretsmanager_secret.mqtt_certs.arn
-    mqtt_port       = var.mqtt_broker_port
-    mqtt_tls_port   = var.mqtt_broker_tls_port
-    websocket_port  = var.mqtt_websocket_port
-    log_group_name  = aws_cloudwatch_log_group.mqtt_broker.name
+    aws_region     = var.aws_region
+    secret_arn     = aws_secretsmanager_secret.mqtt_certs.arn
+    mqtt_port      = var.mqtt_broker_port
+    mqtt_tls_port  = var.mqtt_broker_tls_port
+    websocket_port = var.mqtt_websocket_port
+    log_group_name = aws_cloudwatch_log_group.mqtt_broker.name
   }))
 
   tags = {
