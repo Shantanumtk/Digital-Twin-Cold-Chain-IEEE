@@ -71,10 +71,10 @@ def supervisor_node(state: ColdChainState) -> ColdChainState:
 
     if any(k in query for k in simulation_keywords):
         intent = "simulation"
-    elif any(k in query for k in anomaly_keywords):
-        intent = "anomaly_query"
     elif any(k in query for k in status_keywords):
         intent = "status_query"
+    elif any(k in query for k in anomaly_keywords):
+        intent = "anomaly_query"
     else:
         # LLM fallback for ambiguous queries
         try:
