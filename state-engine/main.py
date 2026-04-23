@@ -153,13 +153,16 @@ def process_telemetry(telemetry: dict):
     current_state = state_result["state"]
 
     if current_state in ["WARNING", "CRITICAL"]:
-        if previous_state != current_state:
-            redis_client.set_active_alert(asset_id, {
-                "state":         current_state,
-                "reasons":       state_result["reasons"],
-                "temperature_c": telemetry.get("temperature_c"),
-            })
-            if current_state == "CRITICAL":
+        redis_client.set_active_alert(asset_id, {
+            "state":         current_state,
+            "reasons":       state_result["reasons"],
+            "temperature_c": telemetry.get("temperature_c"),
+        })
+        if current_state == "CRITICAL":
+            # Fire SNS once per hour per asset (cooldown key prevents spam)
+            cooldown_key = f"sns:cooldown:{asset_id}"
+            already_sent = redis_client.client.get(cooldown_key)
+            if not already_sent:
                 try:
                     publish_critical_alert(
                         asset_id=asset_id,
@@ -167,10 +170,14 @@ def process_telemetry(telemetry: dict):
                         message="; ".join(state_result["reasons"]),
                     )
                     logger.info(f"SNS alert sent for {asset_id}")
+                    # 1-hour cooldown so we don't spam the same asset
+                    redis_client.client.setex(cooldown_key, 3600, "1")
                 except Exception as sns_err:
                     logger.error(f"SNS publish error for {asset_id}: {sns_err}")
     else:
         redis_client.clear_alert(asset_id)
+        # Clear cooldown so next CRITICAL transition fires again
+        redis_client.client.delete(f"sns:cooldown:{asset_id}")
 
 
 def process_alert(alert: dict):
