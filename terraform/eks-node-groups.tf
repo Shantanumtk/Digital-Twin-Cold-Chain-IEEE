@@ -118,3 +118,27 @@ resource "aws_eks_node_group" "main" {
     aws_iam_role_policy_attachment.eks_container_registry,
   ]
 }
+# =============================================================================
+# NodePort rules on the EKS cluster-managed SG (AWS auto-creates this SG)
+# This is the SG actually attached to EKS nodes, different from eks_nodes SG
+# =============================================================================
+
+resource "aws_security_group_rule" "cluster_sg_redis_nodeport" {
+  type              = "ingress"
+  from_port         = 30379
+  to_port           = 30379
+  protocol          = "tcp"
+  cidr_blocks       = ["10.0.0.0/16"]
+  security_group_id = aws_eks_cluster.main.vpc_config[0].cluster_security_group_id
+  description       = "MCP Agent to Redis NodePort"
+}
+
+resource "aws_security_group_rule" "cluster_sg_kafka_nodeport" {
+  type              = "ingress"
+  from_port         = 30092
+  to_port           = 30092
+  protocol          = "tcp"
+  cidr_blocks       = ["10.0.0.0/16"]
+  security_group_id = aws_eks_cluster.main.vpc_config[0].cluster_security_group_id
+  description       = "MCP Agent to Kafka NodePort"
+}
