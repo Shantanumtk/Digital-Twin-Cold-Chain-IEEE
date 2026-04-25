@@ -39,7 +39,7 @@ export default function FloatingChat() {
         transition: "all 0.25s cubic-bezier(0.4,0,0.2,1)",
       }
     : {
-        position: "fixed", bottom: 88, right: 84,
+        position: "fixed", bottom: 88, right: 24,
         width: 370, height: 460,
         borderRadius: 16, background: theme.card,
         border: "1px solid " + theme.border,
@@ -146,7 +146,7 @@ export default function FloatingChat() {
 
           {/* Input */}
           <div style={{
-            padding: 10, borderTop: "1px solid " + theme.border,
+            padding: 10, paddingRight: 70, borderTop: "1px solid " + theme.border,
             display: "flex", gap: 6, flexShrink: 0,
           }}>
             <input
