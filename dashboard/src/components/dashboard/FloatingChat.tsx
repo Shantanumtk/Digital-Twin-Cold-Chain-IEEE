@@ -39,7 +39,7 @@ export default function FloatingChat() {
         transition: "all 0.25s cubic-bezier(0.4,0,0.2,1)",
       }
     : {
-        position: "fixed", bottom: 88, right: 24,
+        position: "fixed", bottom: 88, right: 84,
         width: 370, height: 460,
         borderRadius: 16, background: theme.card,
         border: "1px solid " + theme.border,
