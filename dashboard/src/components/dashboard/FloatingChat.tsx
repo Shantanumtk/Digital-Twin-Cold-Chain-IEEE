@@ -29,7 +29,7 @@ export default function FloatingChat() {
 
   const panelStyle: React.CSSProperties = maximized
     ? {
-        position: "fixed", bottom: 24, right: 24,
+        position: "fixed", bottom: open && !maximized ? 492 : 24, right: 24,
         width: 700, height: "80vh",
         borderRadius: 18, background: theme.card,
         border: "1px solid " + theme.border,
@@ -58,7 +58,7 @@ export default function FloatingChat() {
           if (maximized && open) setMaximized(false);
         }}
         style={{
-          position: "fixed", bottom: 24, right: 24,
+          position: "fixed", bottom: open && !maximized ? 492 : 24, right: 24,
           width: 50, height: 50, borderRadius: "50%",
           background: "linear-gradient(135deg, " + theme.accent + ", #059669)",
           display: "flex", alignItems: "center", justifyContent: "center",
