@@ -474,6 +474,7 @@ apply_configmaps() {
     --from-literal=KAFKA_TOPICS="coldchain.telemetry.trucks,coldchain.telemetry.rooms,coldchain.alerts" \
     --from-literal=MONGO_URI="mongodb://${MONGODB_PRIVATE_IP}:27017" \
     --from-literal=MONGO_DB="coldchain" \
+    --from-literal=SNS_TOPIC_ARN="arn:aws:sns:${AWS_REGION}:${AWS_ACCOUNT_ID}:coldchain-critical-alerts" \
     --dry-run=client -o yaml | kubectl apply -f -
 
   kubectl create configmap state-engine-config -n "$NAMESPACE" \
@@ -485,6 +486,7 @@ apply_configmaps() {
     --from-literal=REDIS_DB="0" \
     --from-literal=MONGO_URI="mongodb://${MONGODB_PRIVATE_IP}:27017" \
     --from-literal=MONGO_DB="coldchain" \
+    --from-literal=SNS_TOPIC_ARN="arn:aws:sns:${AWS_REGION}:${AWS_ACCOUNT_ID}:coldchain-critical-alerts" \
     --dry-run=client -o yaml | kubectl apply -f -
 
   PROFILE_FILE="profiles/${PROFILE_NAME}.yaml"

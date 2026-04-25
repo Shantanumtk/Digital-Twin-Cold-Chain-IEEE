@@ -53,6 +53,11 @@ spec:
                 configMapKeyRef:
                   name: state-engine-config
                   key: MONGO_URI
+            - name: SNS_TOPIC_ARN
+              valueFrom:
+                configMapKeyRef:
+                  name: state-engine-config
+                  key: SNS_TOPIC_ARN
             - name: MONGO_DB
               valueFrom:
                 configMapKeyRef:
